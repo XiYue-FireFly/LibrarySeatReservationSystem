@@ -1,0 +1,15 @@
+package com.library.reservation;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
+@SpringBootApplication
+@EnableFeignClients
+@MapperScan("com.library.reservation.mapper")
+public class ReservationApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ReservationApplication.class, args);
+    }
+}
