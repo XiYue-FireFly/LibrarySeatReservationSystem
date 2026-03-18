@@ -131,10 +131,6 @@ const handleFileUpload = async (event) => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     if (res.code === 200) {
-      // res.data is /uploads/avatars/xxx.png
-      // The frontend should prepend the base URL if needed, but here request.js likely handles the base.
-      // However, for image src, we might need the full URL if it's served by another port.
-      // But gateway routes it, so it should be fine.
       form.value.avatar = res.data
       showCustomUrl.value = false
     } else {
@@ -203,8 +199,6 @@ const handleRegister = async () => {
     errorMsg.value = '两次输入的密码不一致'
     return
   }
-  
-  
 
   loading.value = true
   
@@ -237,13 +231,22 @@ const handleRegister = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 0;
+  padding: 40px 0;
+  overflow: hidden;
+  position: relative;
 }
 
 .login-box {
   width: 100%;
-  max-width: 450px;
+  max-width: 480px;
   padding: 20px;
+  animation: slideInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10;
+}
+
+@keyframes slideInUp {
+  0% { transform: translateY(40px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
 }
 
 .login-form {
@@ -255,6 +258,7 @@ const handleRegister = async () => {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
+  color: var(--text-main);
 }
 
 .w-full {
@@ -263,9 +267,15 @@ const handleRegister = async () => {
 }
 
 .error-msg, .field-error {
-  color: var(--danger);
+  color: #ff4d4f;
   font-size: 0.9rem;
   text-align: center;
+}
+
+.error-msg {
+  background: rgba(255, 77, 79, 0.1);
+  padding: 8px;
+  border-radius: 6px;
 }
 
 .field-error {
@@ -278,27 +288,31 @@ const handleRegister = async () => {
   color: var(--primary);
   text-decoration: none;
   font-size: 0.9rem;
+  transition: all 0.3s;
 }
 
 .admin-link a:hover {
-  text-decoration: underline;
+  filter: brightness(1.2);
+  transform: translateX(3px);
+  display: inline-block;
 }
 
 .admin-link {
-  border-top: 1px solid rgba(255,255,255,0.2);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  margin-top: 20px !important;
   padding-top: 15px;
 }
 
 .avatar-selector {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   margin-top: 10px;
 }
 
 .avatar-item {
-  width: 45px;
-  height: 45px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
@@ -308,6 +322,7 @@ const handleRegister = async () => {
   justify-content: center;
   background: rgba(255,255,255,0.1);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
 .avatar-item img {
@@ -316,21 +331,26 @@ const handleRegister = async () => {
   object-fit: cover;
 }
 
+.avatar-item:hover {
+  transform: translateY(-3px);
+  background: rgba(255,255,255,0.2);
+}
+
 .avatar-item.active {
   border-color: var(--primary);
-  transform: scale(1.1);
-  box-shadow: 0 0 10px rgba(79, 70, 229, 0.4);
+  transform: scale(1.15) translateY(-3px);
+  box-shadow: 0 8px 15px rgba(79, 70, 229, 0.4);
 }
 
 .avatar-item.custom-trigger {
-  font-size: 1.2rem;
-  background: rgba(255,255,255,0.2);
+  font-size: 1.25rem;
+  background: rgba(255,255,255,0.15);
 }
 
 .avatar-item.upload-box {
   background: rgba(79, 70, 229, 0.1);
   border: 1px dashed var(--primary);
-  font-size: 1.2rem;
+  font-size: 1.25rem;
 }
 
 .upload-spinner {
@@ -349,21 +369,24 @@ const handleRegister = async () => {
 .avatar-preview {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: rgba(255,255,255,0.05);
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 10px 15px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
 }
 
 .preview-img {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .glass-input.sm {
-  padding: 8px 12px;
+  padding: 10px 15px;
   font-size: 0.9rem;
 }
 </style>
+

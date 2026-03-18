@@ -75,12 +75,21 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  position: relative;
 }
 
 .login-box {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   padding: 20px;
+  animation: slideInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10;
+}
+
+@keyframes slideInUp {
+  0% { transform: translateY(40px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
 }
 
 .login-form {
@@ -101,7 +110,10 @@ const handleLogin = async () => {
 }
 
 .error-msg {
-  color: var(--danger);
+  color: #ff4d4f;
+  background: rgba(255, 77, 79, 0.1);
+  padding: 8px;
+  border-radius: 6px;
   font-size: 0.9rem;
   text-align: center;
 }
@@ -110,14 +122,20 @@ const handleLogin = async () => {
   color: var(--primary);
   text-decoration: none;
   font-size: 0.9rem;
+  transition: all 0.3s;
 }
 
 .register-link:hover, .admin-link a:hover {
-  text-decoration: underline;
+  filter: brightness(1.2);
+  text-decoration: none;
+  transform: translateX(3px);
+  display: inline-block;
 }
 
 .admin-link {
-  border-top: 1px solid rgba(255,255,255,0.2);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  margin-top: 20px !important;
   padding-top: 15px;
 }
 </style>
+

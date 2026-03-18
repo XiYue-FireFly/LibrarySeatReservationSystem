@@ -205,11 +205,22 @@
                 </div>
                 <input type="file" ref="labImageInput" @change="handleLabImageFileChange" accept="image/*" style="display: none;" />
                 <div class="flex" style="gap: 10px; margin-top: 10px;">
-                  <button class="glass-button sm" @click="triggerLabImageUpload">选择图片</button>
-                  <button class="glass-button sm success" @click="uploadLabImage" :disabled="!labImageFile || uploadingImage">
-                    {{ uploadingImage ? '上传中...' : '上传并保存' }}
-                  </button>
-                  <button v-if="labImagePreviewUrl" class="glass-button sm danger" @click="removeLabImage" :disabled="uploadingImage">移除图片</button>
+                <div class="flex flex-col gap-2 w-full">
+                  <div class="flex items-center gap-2">
+                    <input type="text" v-model="labImageUrlInput" class="glass-input" placeholder="输入图片 URL 链接..." style="flex: 1" />
+                    <button class="glass-button sm success" @click="saveLabImageUrl" :disabled="!labImageUrlInput.trim()">
+                      保存链接
+                    </button>
+                  </div>
+                  <div class="text-muted" style="font-size: 0.8rem;">— 或选择本地文件上传 —</div>
+                  <div class="flex" style="gap: 10px;">
+                    <button class="glass-button sm" @click="triggerLabImageUpload">选择图片</button>
+                    <button class="glass-button sm success" @click="uploadLabImage" :disabled="!labImageFile || uploadingImage">
+                      {{ uploadingImage ? '上传中...' : '上传并保存' }}
+                    </button>
+                    <button v-if="labImagePreviewUrl" class="glass-button sm danger" @click="removeLabImage" :disabled="uploadingImage">移除图片</button>
+                  </div>
+                </div>
                 </div>
               </div>
             </div>
@@ -542,6 +553,7 @@ watch(selectedLabForSeats, (newLab) => {
     newSeatCount.value = newLab.totalSeats
     labImageFile.value = null // Clear any selected file
     labImagePreviewUrl.value = newLab.labImageUrl // Set preview to existing image
+    labImageUrlInput.value = newLab.labImageUrl || '' // Initialize URL input
   }
 })
 
@@ -803,7 +815,29 @@ const saveLabManager = async () => {
 const labImageInput = ref(null)
 const labImageFile = ref(null)
 const labImagePreviewUrl = ref(null)
-const uploadingImage = ref(null)
+const uploadingImage = ref(false)
+const labImageUrlInput = ref('')
+
+const saveLabImageUrl = async () => {
+  if (!selectedLabForSeats.value || !labImageUrlInput.value.trim()) return
+  
+  try {
+    const res = await request.put('/admin/lab/image', {
+      id: selectedLabForSeats.value.id,
+      labImageUrl: labImageUrlInput.value.trim()
+    })
+    if (res.code === 200) {
+      showMessage('保存成功', '实验室图片 URL 已更新')
+      selectedLabForSeats.value.labImageUrl = labImageUrlInput.value.trim()
+      labImagePreviewUrl.value = labImageUrlInput.value.trim()
+      labImageFile.value = null
+    } else {
+      showMessage('保存失败', res.msg, 'error')
+    }
+  } catch (error) {
+    showMessage('保存失败', error.message || '网络错误', 'error')
+  }
+}
 
 const triggerLabImageUpload = () => {
   labImageInput.value.click()
@@ -852,6 +886,7 @@ const uploadLabImage = async () => {
     if (updateRes.code === 200) {
       showMessage('保存成功', '实验室图片已更新')
       selectedLabForSeats.value.labImageUrl = imageUrl
+      labImagePreviewUrl.value = imageUrl // Fix: update preview URL immediately
       labImageFile.value = null // Clear file after successful upload
     } else {
       showMessage('保存失败', updateRes.msg || '更新实验室图片失败', 'error')
@@ -940,6 +975,36 @@ onMounted(() => {
   padding: 0 30px;
   max-width: 1400px;
   margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  .content-container {
+    padding: 0 15px;
+  }
+}
+
+@media (max-width: 768px) {
+  .content-container {
+    flex-direction: column;
+  }
+  .tabs-sidebar {
+    width: 100%;
+    margin-bottom: 20px;
+  }
+  .lab-cards {
+    grid-template-columns: 1fr;
+  }
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-bar input, .filter-bar select {
+    width: 100% !important;
+  }
+  .glass-table {
+    display: block;
+    overflow-x: auto;
+  }
 }
 
 .tabs-sidebar {

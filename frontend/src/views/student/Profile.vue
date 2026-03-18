@@ -129,7 +129,7 @@
     
     <!-- Cancel Confirm Modal -->
     <div v-if="showCancelModal" class="modal-overlay" @click.self="showCancelModal = false">
-      <div class="profile-modal">
+      <div class="glass-modal">
         <h3>&#x2757; 确认取消预约</h3>
         <p class="mt-2">确定要取消选中的 <strong>{{ cancelTarget.length }}</strong> 个预约吗？</p>
         <p class="mt-1" style="color: #64748b; font-size: 0.9rem;">取消后座位将自动释放，不可撤销。</p>
@@ -142,7 +142,7 @@
 
     <!-- Feedback Modal -->
     <div v-if="showFeedbackModal" class="modal-overlay" @click.self="showFeedbackModal = false">
-      <div class="profile-modal">
+      <div class="glass-modal">
         <h3>&#x1F4DD; 座位反馈</h3>
         <div class="form-group mt-4">
           <label>实验室 ID</label>
@@ -438,6 +438,16 @@ onMounted(() => {
   margin: 0 auto;
 }
 
+@media (max-width: 768px) {
+  .profile-container {
+    flex-direction: column;
+    padding: 0 15px;
+  }
+  .profile-sidebar {
+    width: 100% !important;
+  }
+}
+
 .profile-sidebar {
   width: 350px;
 }
@@ -562,18 +572,15 @@ onMounted(() => {
 }
 
 .profile-modal {
-  background: #fff;
   border-radius: 18px;
-  padding: 30px 32px;
   min-width: 380px;
   max-width: 500px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
 
 .profile-modal h3 {
   font-size: 1.2rem;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--text-main);
   margin-bottom: 4px;
 }
 

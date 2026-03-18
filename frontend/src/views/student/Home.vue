@@ -13,14 +13,22 @@
                :class="{ active: selectedLab?.id === lab.id, disabled: lab.status === 'UNAVAILABLE' }"
                @click="selectLab(lab)"
              >
-               <div class="lab-name">{{ lab.name }}</div>
-               <div class="lab-meta">
-                 座位: {{ lab.availableSeats }} / {{ lab.totalSeats }}
-               </div>
-               <div v-if="lab.status === 'UNAVAILABLE'" class="lab-error">
-                 维护中: {{ lab.offlineReason }}
-               </div>
-             </li>
+                <div class="flex items-center gap-3">
+                  <div class="lab-thumbnail" v-if="lab.labImageUrl">
+                    <img :src="lab.labImageUrl" alt="lab" />
+                  </div>
+                  <div class="lab-thumbnail-placeholder" v-else>🏢</div>
+                  <div class="flex flex-col">
+                    <div class="lab-name">{{ lab.name }}</div>
+                    <div class="lab-meta">
+                      座位: {{ lab.availableSeats }} / {{ lab.totalSeats }}
+                    </div>
+                  </div>
+                </div>
+                <div v-if="lab.status === 'UNAVAILABLE'" class="lab-error">
+                  维护中: {{ lab.offlineReason }}
+                </div>
+              </li>
           </ul>
         </GlassCard>
       </div>
@@ -41,7 +49,10 @@
                   <input type="datetime-local" v-model="bookEndTime" :min="minDatetime" :max="maxDatetime" class="glass-input time-input" />
                 </div>
               </div>
-              <div class="setting-item">
+              <div class="setting-item flex items-center gap-4">
+                <button class="glass-button secondary-btn" @click="showManagerModal = true">
+                   📞 联系负责人
+                </button>
                 <button class="glass-button" @click="toggleBatchMode">
                   {{ isBatchMode ? '退出批量预约' : '批量预约 (最多3个)' }}
                 </button>
@@ -56,7 +67,8 @@
             </div>
 
             <div v-if="loadingSeats" class="loading mt-4">座位加载中...</div>
-            <div v-else class="seat-grid-container mt-4">
+            <div v-else class="seat-grid-container mt-4" :style="selectedLab?.labImageUrl ? `background-image: linear-gradient(rgba(241, 245, 249, 0.94), rgba(241, 245, 249, 0.94)), url(${selectedLab.labImageUrl}); background-size: cover; background-position: center;` : ''">
+              <div v-if="selectedLab?.labImageUrl" class="lab-bg-image" :style="`background-image: url(${selectedLab.labImageUrl})`"></div>
               
               <!-- Case 1: Custom Row-by-Row Layout -->
               <div v-if="labLayoutConfig" class="custom-rows-wrapper">
@@ -104,10 +116,6 @@
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#a0aec0"/></svg>
                     </div>
                 </div>
-              </div>
-              
-              <div class="lab-manager-watermark">
-                实验室负责人为 {{ selectedLab?.managerName || '未设置' }}，邮箱：{{ selectedLab?.managerEmail || '未设置' }}
               </div>
             </div>
             
@@ -179,6 +187,29 @@
           </div>
         </div>
         <button class="occupant-close mt-6" @click="showOccupantModal = false">关闭</button>
+      </div>
+    </div>
+    <!-- 实验室负责人弹窗 -->
+    <div v-if="showManagerModal" class="booking-modal-overlay" @click.self="showManagerModal = false">
+      <div class="booking-modal manager-modal">
+        <h3 class="modal-title">👨‍💼 实验室负责人</h3>
+        <div class="modal-body text-center">
+          <div class="manager-avatar-large">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#6c63ff"/>
+            </svg>
+          </div>
+          <h2 class="mt-4">{{ selectedLab?.managerName || '未设置' }}</h2>
+          <div class="mt-2 text-muted flex items-center justify-center gap-2">
+            <svg style="width:16px; height:16px;" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+            </svg>
+            {{ selectedLab?.managerEmail || '未设置' }}
+          </div>
+        </div>
+        <div class="modal-footer justify-center">
+          <button class="glass-button" @click="showManagerModal = false">关闭</button>
+        </div>
       </div>
     </div>
   </div>
@@ -332,6 +363,7 @@ const toggleSeatSelection = (seat) => {
 }
 
 const showBookingModal = ref(false)
+const showManagerModal = ref(false)
 const bookingLoading = ref(false)
 const modalUser = ref(null)
 
@@ -467,6 +499,39 @@ setInterval(() => {
   height: calc(100vh - 100px);
 }
 
+@media (max-width: 1024px) {
+  .content-container {
+    height: auto;
+    padding: 0 15px;
+  }
+}
+
+@media (max-width: 768px) {
+  .content-container {
+    flex-direction: column;
+    padding: 0 15px;
+  }
+  .sidebar {
+    width: 100% !important;
+  }
+  .booking-settings {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  .time-input {
+    width: 100%;
+  }
+  .seat-grid-container {
+    padding: 15px;
+  }
+  .seat {
+    width: 60px;
+    height: 60px;
+    font-size: 0.8rem;
+  }
+}
+
 .sidebar {
   width: 300px;
   display: flex;
@@ -482,7 +547,7 @@ setInterval(() => {
 .lab-list {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: 0 auto;
 }
 
 .lab-list li {
@@ -545,6 +610,47 @@ setInterval(() => {
   font-size: 0.9rem;
 }
 
+.lab-thumbnail {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.lab-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lab-thumbnail-placeholder {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.lab-bg-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.08;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+  border-radius: 16px;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
@@ -570,16 +676,85 @@ setInterval(() => {
   align-items: center;
 }
 
-.lab-manager-watermark {
+.lab-manager-info-box {
   position: absolute;
-  bottom: 20px;
-  left: 30px;
-  font-size: 0.95rem;
-  font-weight: 500;
+  bottom: 25px;
+  left: 25px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  padding: 16px;
+  min-width: 220px;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
+  z-index: 50;
+  transition: all 0.3s ease;
+}
+
+.lab-manager-info-box:hover {
+  transform: translateY(-5px);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 40px rgba(31, 38, 135, 0.15);
+}
+
+.info-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.info-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.info-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manager-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.manager-email {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.email-icon {
+  width: 14px;
+  height: 14px;
   color: #94a3b8;
-  letter-spacing: 0.5px;
-  z-index: 0;
-  pointer-events: none;
+}
+
+/* Transitions */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(20px) scale(0.9);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(20px) scale(0.9);
 }
 
 .seat-grid {
@@ -897,5 +1072,41 @@ setInterval(() => {
 
 .detail-item .value.highlight {
   color: var(--primary);
+}
+.secondary-btn {
+  background: rgba(79, 70, 229, 0.15) !important;
+  border: 1px solid rgba(79, 70, 229, 0.3) !important;
+  color: #818cf8 !important;
+}
+
+.secondary-btn:hover {
+  background: rgba(79, 70, 229, 0.25) !important;
+  transform: translateY(-2px);
+}
+
+/* Manager Modal Specifics */
+.manager-modal {
+  max-width: 400px !important;
+  background: rgba(2, 6, 23, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.manager-avatar-large {
+  width: 100px;
+  height: 100px;
+  margin: 0 auto;
+  background: rgba(108, 99, 255, 0.1);
+  border-radius: 50%;
+  padding: 20px;
+  border: 2px solid rgba(108, 99, 255, 0.2);
+}
+
+.manager-avatar-large svg {
+  width: 100%;
+  height: 100%;
+}
+
+.modal-footer.justify-center {
+  justify-content: center;
 }
 </style>
