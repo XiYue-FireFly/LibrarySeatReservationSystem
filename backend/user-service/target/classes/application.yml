@@ -9,14 +9,11 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/library_system?useUnicode=true&characterEncoding=UTF-8&serverTimezone=GMT%2B8
     username: library_system
     password: 123456
-  data:
-    redis:
-      host: 127.0.0.1
-      port: 6379
-    servlet:
-      multipart:
-        max-file-size: 5MB
-        max-request-size: 5MB
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml

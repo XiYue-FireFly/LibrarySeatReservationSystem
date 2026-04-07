@@ -6,12 +6,22 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
+      // 移动端页面代理到 app 的开发服务器
+      '/mobile': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/mobile/, ''),
+      },
       '/api/upload': {
-        target: 'http://localhost:8081',
+        target: 'http://127.0.0.1:8081',
         changeOrigin: true,
       },
       '/api': {
-        target: 'http://localhost:8080', // Gateway
+        target: 'http://127.0.0.1:8080', // Gateway
+        changeOrigin: true,
+      },
+      '/uploads': {
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
       },
     }

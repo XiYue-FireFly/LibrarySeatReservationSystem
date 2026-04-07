@@ -5,11 +5,12 @@ import com.library.common.core.Result;
 import com.library.reservation.entity.BookRecord;
 import com.library.reservation.entity.Lab;
 import com.library.reservation.entity.Seat;
+import com.library.reservation.entity.User;
+import com.library.reservation.feign.UserServiceClient;
 import com.library.reservation.mapper.BookRecordMapper;
 import com.library.reservation.mapper.LabMapper;
 import com.library.reservation.mapper.SeatMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -29,7 +30,7 @@ public class StudentLabController {
     private BookRecordMapper bookRecordMapper;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private UserServiceClient userServiceClient;
 
     /**
      * 获取实验室列表（包括不可用的，前端展示维护中状态）
@@ -59,49 +60,58 @@ public class StudentLabController {
         // Log seat numbers for debugging
         seats.forEach(seat -> System.out.println("Fetched Seat: " + seat.getSeatNo() + " (ID: " + seat.getId() + ")"));
 
-        // Enrich BOOKED seats with the current booker's avatar from Redis
+        // Enrich seats by checking active bookings and overriding status if necessary
         for (Seat seat : seats) {
-            if ("BOOKED".equals(seat.getStatus())) {
-                // Find the active booking for this seat
-                BookRecord record = bookRecordMapper.selectOne(
-                        new LambdaQueryWrapper<BookRecord>()
-                                .eq(BookRecord::getSeatId, seat.getId())
-                                .in(BookRecord::getStatus, "PENDING", "CHECKED_IN")
-                                .orderByDesc(BookRecord::getCreateTime)
-                                .last("LIMIT 1")
-                );
-                if (record != null && record.getUserId() != null) {
-                    seat.setBookerId(record.getUserId());
-                    // Try to get avatar from Redis cache (set during login)
-                    String avatar = redisTemplate.opsForValue().get("avatar:" + record.getUserId());
-                    if (avatar != null) {
-                        seat.setUserAvatar(avatar);
-                    }
-                    String name = redisTemplate.opsForValue().get("name:" + record.getUserId());
-                    if (name != null) {
-                        seat.setBookerName(name);
-                    }
-                    String username = redisTemplate.opsForValue().get("username:" + record.getUserId());
-                    if (username != null) {
-                        seat.setBookerUserName(username);
-                    }
-                    String account = redisTemplate.opsForValue().get("account:" + record.getUserId());
-                    if (account != null) {
-                        seat.setBookerAccount(account);
-                    }
-                    
-                    try {
-                        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm");
-                        if (record.getBookStartTime() != null) {
-                            seat.setBookStartTime(sdf.format(record.getBookStartTime()));
+            BookRecord record = bookRecordMapper.selectOne(
+                    new LambdaQueryWrapper<BookRecord>()
+                            .eq(BookRecord::getSeatId, seat.getId())
+                            .in(BookRecord::getStatus, "PENDING", "CHECKED_IN")
+                            .orderByDesc(BookRecord::getCreateTime)
+                            .last("LIMIT 1")
+            );
+            
+            if (record != null && record.getUserId() != null) {
+                seat.setStatus("BOOKED");
+                seat.setBookerId(record.getUserId());
+                
+                try {
+                    // Fetch user info from user-service
+                    Result<User> userResult = userServiceClient.getUserById(record.getUserId());
+                    if (userResult.getCode() == 200 && userResult.getData() != null) {
+                        User user = userResult.getData();
+                        // 1. Set Avatar
+                        if (user.getAvatar() != null) {
+                            seat.setUserAvatar(user.getAvatar());
                         }
-                        if (record.getBookEndTime() != null) {
-                            seat.setBookEndTime(sdf.format(record.getBookEndTime()));
+                        
+                        // 2. Set Names (Masked)
+                        if (user.getName() != null && !user.getName().isEmpty()) {
+                            seat.setBookerName(maskName(user.getName()));
+                        } else {
+                            seat.setBookerName("某同学");
                         }
-                    } catch (Exception e) {
-                        System.err.println("Time formatting error for seat " + seat.getId() + ": " + e.getMessage());
+                        
+                        if (user.getUserName() != null) seat.setBookerUserName(user.getUserName());
+                        
+                        // 3. Set Account (Masked)
+                        if (user.getAccount() != null) {
+                            seat.setBookerAccount(maskAccount(user.getAccount()));
+                        }
+                    } else {
+                        // Fallback if user details are not found in user-service
+                        seat.setBookerName("神秘同学");
                     }
+                } catch(Exception e) {
+                    System.err.println("Feign error fetching user " + record.getUserId() + ": " + e.getMessage());
+                    seat.setBookerName("神秘同学");
                 }
+
+                // Format times
+                try {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm");
+                    if (record.getBookStartTime() != null) seat.setBookStartTime(sdf.format(record.getBookStartTime()));
+                    if (record.getBookEndTime() != null) seat.setBookEndTime(sdf.format(record.getBookEndTime()));
+                } catch (Exception e) {}
             }
         }
 
@@ -111,8 +121,21 @@ public class StudentLabController {
         data.put("totalSeats", lab.getTotalSeats());
         data.put("cols", lab.getCols());
         data.put("layoutConfig", lab.getLayoutConfig());
+        data.put("managerName", lab.getManagerName());
+        data.put("managerEmail", lab.getManagerEmail());
         data.put("seats", seats);
         
         return Result.success(data);
+    }
+    
+    private String maskName(String name) {
+        if (name == null || name.isEmpty()) return "同学";
+        if (name.length() == 1) return name + "同学";
+        return name.substring(0, 1) + "同学";
+    }
+    
+    private String maskAccount(String account) {
+        if (account == null || account.length() < 6) return account;
+        return account.substring(0, 4) + "******" + account.substring(account.length() - 2);
     }
 }

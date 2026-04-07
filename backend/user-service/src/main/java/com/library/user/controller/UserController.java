@@ -6,14 +6,12 @@ import com.library.common.utils.JwtUtils;
 import com.library.user.entity.User;
 import com.library.user.mapper.UserMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @RestController
 public class UserController {
@@ -21,8 +19,8 @@ public class UserController {
     @Autowired
     private UserMapper userMapper;
 
-    @Autowired
-    private StringRedisTemplate redisTemplate;
+    // Use a simple in-memory map to track login failures
+    private Map<String, Integer> loginFailures = new HashMap<>();
 
     /**
      * 学生登录
@@ -44,14 +42,6 @@ public class UserController {
         if (account == null || password == null) {
             return Result.error("账号或密码不能为空");
         }
-
-        // Check if account is locked
-        String lockKey = "login:lock:" + account;
-        String failKey = "login:fail:" + account;
-        String locked = redisTemplate.opsForValue().get(lockKey);
-        if (locked != null) {
-            return Result.error("账号已被锁定，请 1 小时后再试");
-        }
         
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getAccount, account));
         if (user == null) {
@@ -61,20 +51,17 @@ public class UserController {
         // MD5 password check
         String md5Password = DigestUtils.md5DigestAsHex(password.getBytes());
         if (!user.getPassword().equals(md5Password)) {
-            // Increment failure counter
-            Long fails = redisTemplate.opsForValue().increment(failKey);
-            redisTemplate.expire(failKey, 1, TimeUnit.HOURS);
-            long remaining = 5 - (fails == null ? 1 : fails);
-            if (fails != null && fails >= 5) {
-                redisTemplate.opsForValue().set(lockKey, "locked", 1, TimeUnit.HOURS);
-                redisTemplate.delete(failKey);
-                return Result.error("密码错误次数过多，账号已锁定 1 小时");
+            int fails = loginFailures.getOrDefault(account, 0) + 1;
+            loginFailures.put(account, fails);
+            if (fails >= 5) {
+                return Result.error("密码错误次数过多，账号已锁定");
             }
-            return Result.error("密码错误，还副有 " + remaining + " 次机会");
+            long remaining = 5 - fails;
+            return Result.error("密码错误，还有 " + remaining + " 次机会");
         }
 
         // Clear failure counter on success
-        redisTemplate.delete(failKey);
+        loginFailures.remove(account);
 
         if ("STUDENT".equals(expectedRolePrefix) && !"STUDENT".equals(user.getRole())) {
             return Result.error("非学生账号，请前往管理端登录");
@@ -90,22 +77,10 @@ public class UserController {
         claims.put("name", user.getName());
         String token = JwtUtils.createToken(claims, user.getId().toString());
 
-        // Cache User Info to Redis
-        if (user.getAvatar() != null) {
-            redisTemplate.opsForValue().set("avatar:" + user.getId(), user.getAvatar(), 7, TimeUnit.DAYS);
-        }
-        if (user.getName() != null) {
-            redisTemplate.opsForValue().set("name:" + user.getId(), maskName(user.getName()), 7, TimeUnit.DAYS);
-        }
-        if (user.getUserName() != null) {
-            redisTemplate.opsForValue().set("username:" + user.getId(), user.getUserName(), 7, TimeUnit.DAYS);
-        }
-        if (user.getAccount() != null) {
-            redisTemplate.opsForValue().set("account:" + user.getId(), maskAccount(user.getAccount()), 7, TimeUnit.DAYS);
-        }
-
         Map<String, Object> data = new HashMap<>();
         data.put("token", token);
+        // Do not return raw password
+        user.setPassword(null);
         data.put("userInfo", user);
         return Result.success(data);
     }
@@ -194,11 +169,6 @@ public class UserController {
                     System.err.println("Failed to delete old avatar: " + e.getMessage());
                 }
             }
-            // Update Redis cache
-            redisTemplate.opsForValue().set("avatar:" + userId, userForm.getAvatar(), 7, TimeUnit.DAYS);
-        }
-        if (userForm.getUserName() != null) {
-            redisTemplate.opsForValue().set("username:" + userId, userForm.getUserName(), 7, TimeUnit.DAYS);
         }
 
         // 2. Update Database
@@ -216,11 +186,6 @@ public class UserController {
     @GetMapping("/internal/user/{id}")
     public Result<User> getUserById(@PathVariable("id") Long id) {
         User user = userMapper.selectById(id);
-        // Try getting avatar from Redis first
-        String avatar = redisTemplate.opsForValue().get("avatar:" + id);
-        if (avatar != null && user != null) {
-            user.setAvatar(avatar);
-        }
         return Result.success(user);
     }
 
