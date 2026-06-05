@@ -12,6 +12,8 @@ import { Profile } from './views/Profile';
 import { Success } from './views/Success';
 import { EditProfile } from './views/EditProfile';
 import { Feedback } from './views/Feedback';
+import { Notifications } from './views/Notifications';
+import { AdminPortal } from './views/AdminPortal';
 import { AuthProvider, useAuth } from './store/auth';
 
 /** 路由守卫：未登录则跳转到登录页 */
@@ -29,6 +31,8 @@ function AppRoutes() {
       <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
       <Route path="/edit-profile" element={<PrivateRoute><EditProfile /></PrivateRoute>} />
       <Route path="/feedback" element={<PrivateRoute><Feedback /></PrivateRoute>} />
+      <Route path="/notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
+      <Route path="/admin-portal" element={<PrivateRoute><AdminPortal /></PrivateRoute>} />
       <Route path="/success" element={<PrivateRoute><Success /></PrivateRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

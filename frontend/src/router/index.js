@@ -28,6 +28,12 @@ const routes = [
     component: () => import('../views/student/Profile.vue'),
     meta: { requiresAuth: true, role: 'STUDENT' }
   },
+  {
+    path: '/student/notifications',
+    name: 'StudentNotifications',
+    component: () => import('../views/student/Notifications.vue'),
+    meta: { requiresAuth: true, role: 'STUDENT' }
+  },
   // Admin Portal
   {
     path: '/admin/login',

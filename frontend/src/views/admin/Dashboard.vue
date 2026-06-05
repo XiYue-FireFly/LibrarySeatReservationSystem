@@ -53,6 +53,12 @@
                     <button v-if="res.status === 'PENDING'" class="glass-button success sm" @click="adminCheckin(res)">
                       辅助签到
                     </button>
+                    <button v-if="res.status === 'PENDING'" class="glass-button sm" @click="openQRModal(res, 'IN')" title="生成签到二维码">
+                      签到码
+                    </button>
+                    <button v-if="res.status === 'CHECKED_IN'" class="glass-button sm" style="background:#6366f1; color:white;" @click="openQRModal(res, 'OUT')" title="生成签退二维码">
+                      签退码
+                    </button>
                     <button v-if="res.status === 'CHECKED_IN' || res.status === 'PENDING'" class="glass-button warning sm" @click="adminCheckout(res)">
                       辅助签退
                     </button>
@@ -109,6 +115,25 @@
                 <button class="glass-button sm" style="background:#f1f5f9;color:#334155;" @click="selectedSeatIds = []">取消全选</button>
                 <button class="glass-button sm" style="background:#ef4444;color:#fff;" @click="batchSetStatus('MAINTENANCE')" :disabled="selectedSeatIds.length===0">→ 设为维护</button>
                 <button class="glass-button sm" style="background:#22c55e;color:#fff;" @click="batchSetStatus('FREE')" :disabled="selectedSeatIds.length===0">→ 恢复空闲</button>
+              </div>
+            </div>
+
+            <!-- 实时监控查询 (监控模式) -->
+            <div class="manage-section mt-4 monitoring-panel">
+              <div class="manage-section-title">🕒 实时监控查询 (监控模式)</div>
+              <div class="flex" style="gap:15px; align-items:center; flex-wrap:wrap;">
+                <div class="flex items-center gap-2">
+                  <label style="font-size:0.85rem; font-weight:700;">选择日期:</label>
+                  <input type="date" v-model="adminSelectDate" class="glass-input sm" />
+                </div>
+                <div class="flex items-center gap-2">
+                  <label style="font-size:0.85rem; font-weight:700;">时段:</label>
+                  <select v-model="adminSelectTime" class="glass-input sm" style="width:120px;">
+                    <option v-for="t in timeOptions" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </div>
+                <button class="glass-button sm active-col" @click="fetchSeats">刷新监控图</button>
+                <span style="font-size:0.8rem; color:#64748b;">* 在监控模式下，您可以查阅特定时段谁坐在哪里，点击位置可看完整脱敏资料。</span>
               </div>
             </div>
 
@@ -256,10 +281,18 @@
                   <div v-else class="seat-no" @dblclick.stop="startRename(seat)" :title="'双击改名'">
                     {{ seat.seatNo }}
                   </div>
-                  <img v-if="seat.userAvatar" :src="seat.userAvatar" class="seat-avatar" />
-                  <div v-if="(seat.status === 'BOOKED' || seat.status === 'IN_USE') && !seat.userAvatar" class="seat-avatar-placeholder">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#a0aec0"/></svg>
+                  
+                  <!-- Admin Level Booker Info -->
+                  <div v-if="seat.status === 'BOOKED' || seat.status === 'IN_USE'" class="admin-booker-overlay">
+                    <img v-if="seat.userAvatar" :src="seat.userAvatar" class="seat-avatar" />
+                    <div v-else class="seat-avatar-placeholder">👤</div>
+                    <div class="booker-popup-info">
+                      <p><strong>{{ seat.bookerName || '占座中' }}</strong></p>
+                      <p>{{ seat.bookerAccount || '未知学号' }}</p>
+                      <p class="time-range">{{ seat.bookStartTime }}-{{ seat.bookEndTime }}</p>
+                    </div>
                   </div>
+
                   <div v-if="selectedSeatIds.includes(seat.id)" class="seat-check">✓</div>
                 </div>
               </div>
@@ -374,6 +407,21 @@
         </div>
       </div>
     </div>
+
+    <!-- QR Code Modal -->
+    <div v-if="qrModal.show" class="modal-overlay" @click.self="qrModal.show = false">
+      <div class="quick-modal text-center" style="text-align:center;">
+        <h3 style="margin-bottom:15px;">{{ qrModal.type === 'IN' ? '📥 学生签到码' : '📤 学生签退码' }}</h3>
+        <div class="qr-container" style="display:flex; justify-content:center; padding:20px; background:#fff; border-radius:12px; margin-bottom:15px;">
+           <qrcode-vue :value="qrModal.value" :size="240" level="H" />
+        </div>
+        <p style="font-size:0.85rem; color:#64748b; margin-bottom:20px;">
+          请扫屏幕二维码进行{{ qrModal.type === 'IN' ? '签到' : '签退' }}<br/>
+          (Token 有效期 5 分钟)
+        </p>
+        <button class="glass-button" @click="qrModal.show = false" style="width:100%">关闭窗口</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -382,6 +430,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import NavBar from '../../components/NavBar.vue'
 import GlassCard from '../../components/GlassCard.vue'
 import request from '../../utils/request'
+import QrcodeVue from 'qrcode.vue'
 
 const navLinks = [
   { name: '控制台首页', path: '/admin/dashboard' }
@@ -491,6 +540,33 @@ const adminCheckout = async (record) => {
     }
   } catch (e) {
     console.error(e)
+  }
+}
+
+const qrModal = ref({
+  show: false,
+  value: '',
+  type: 'IN'
+})
+
+const openQRModal = async (record, type) => {
+  try {
+    const res = await request.get(`/admin/book/qr-token?id=${record.id}&type=${type}`)
+    if (res.code === 200) {
+      // Encode as JSON string for the scanner
+      qrModal.value.value = JSON.stringify({
+        bookingId: res.data.bookingId,
+        token: res.data.token,
+        type: res.data.type
+      })
+      qrModal.value.type = type
+      qrModal.value.show = true
+    } else {
+      alert(res.msg)
+    }
+  } catch (e) {
+    console.error(e)
+    alert('请求失败')
   }
 }
 
@@ -692,18 +768,25 @@ const openSeatManage = async (lab) => {
   await fetchSeats()
 }
 
+const adminSelectDate = ref(new Date().toISOString().split('T')[0])
+const adminSelectTime = ref('12:00')
+const timeOptions = Array.from({ length: 24 }, (_, i) => {
+  const hour = (i + 8) % 20 || 8
+  if (hour < 8 || hour >= 20) return null
+  return [`${hour.toString().padStart(2, '0')}:00`, `${hour.toString().padStart(2, '0')}:30`]
+}).flat().filter(Boolean)
+
 const fetchSeats = async () => {
   if (!selectedLabForSeats.value) return
   loadingSeats.value = true
   try {
+    const startStr = `${adminSelectDate.value} ${adminSelectTime.value}:00`
+    const endStr = `${adminSelectDate.value} ${adminSelectTime.value}:01`
+    
     // Use admin endpoint so we get plain seat list without student booking enrichment
-    const res = await request.get(`/admin/seat/list?labId=${selectedLabForSeats.value.id}`)
+    const res = await request.get(`/admin/seat/list?labId=${selectedLabForSeats.value.id}&startTime=${startStr}&endTime=${endStr}`)
     if (res.code === 200) {
       seats.value = res.data || []
-    } else {
-      // Fallback to student endpoint
-      const r2 = await request.get(`/student/seat/list?labId=${selectedLabForSeats.value.id}`)
-      if (r2.code === 200) seats.value = r2.data.seats || []
     }
   } catch (e) {
     console.error(e)

@@ -9,22 +9,16 @@ import java.io.Serializable;
 import java.util.Date;
 
 @Data
-@TableName("user")
-public class User implements Serializable {
+@TableName("notification")
+public class Notification implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String account;
-    private String password;
-    private String name;
-    private String userName;
-    private String avatar;
-    private String role;
-    private Boolean punishStatus;
-    private Integer violationCount = 0;
-    private Date punishEndTime;
-    private Integer bookAheadDays;
+    private Long userId;
+    private String title;
+    private String content;
+    private String type; // SUCCESS, ERROR, WARNING, INFO
+    private Boolean isRead = false;
     private Date createTime;
-    private Date updateTime;
 }

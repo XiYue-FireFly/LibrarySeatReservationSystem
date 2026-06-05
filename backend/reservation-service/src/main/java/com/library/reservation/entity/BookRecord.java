@@ -19,6 +19,8 @@ public class BookRecord {
     private Date bookEndTime;
     private String status; // PENDING, CHECKED_IN, FINISHED, CANCELLED
     private String cancelReason;
+    private String checkinToken;
+    private Date tokenExpiry;
     private Date createTime;
     private Date updateTime;
 }

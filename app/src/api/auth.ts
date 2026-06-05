@@ -11,6 +11,11 @@ export function loginStudent(account: string, password: string): Promise<LoginRe
   return http.post<LoginResponse>('/api/common/login/student', { account, password });
 }
 
+/** 管理员登录 */
+export function loginAdmin(account: string, password: string): Promise<LoginResponse> {
+  return http.post<LoginResponse>('/api/common/login/admin', { account, password });
+}
+
 /** 学生注册
  *  POST /api/student/register
  *  字段：account(学号), password, name(真实姓名), userName(可选昵称)

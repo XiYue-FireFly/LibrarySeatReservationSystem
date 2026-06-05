@@ -8,29 +8,14 @@ import { useAuth } from '../store/auth';
 import { ApiSeat, SeatListData } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
-/** 生成未来 N 天内的时间段（每2小时一个，09:00~21:00） */
-function generateTimeSlots(bookAheadDays: number): string[] {
-  const slots: string[] = [];
-  const now = new Date();
-  for (let d = 0; d <= bookAheadDays; d++) {
-    const date = new Date(now);
-    date.setDate(date.getDate() + d);
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    for (let h = 8; h <= 20; h += 2) {
-      if (d === 0 && h <= now.getHours()) continue; // 跳过已过时段
-      const startHour = String(h).padStart(2, '0');
-      slots.push(`${dateStr} ${startHour}:00`);
-    }
-  }
-  return slots.slice(0, 20); // 最多展示20个时段
+/** 格式化日期：YYYY-MM-DD */
+function formatDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-/** 格式化为后端要求的 datetime 字符串 */
-function toBackendTime(slotStr: string, extra2h = false): string {
-  const [datePart, timePart] = slotStr.split(' ');
-  const [h, m] = timePart.split(':').map(Number);
-  const newH = extra2h ? h + 2 : h;
-  return `${datePart} ${String(newH).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+/** 格式化时间：HH:mm */
+function formatTime(h: number, m: number): string {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 export const Reservation: React.FC = () => {
@@ -43,45 +28,107 @@ export const Reservation: React.FC = () => {
   const [error, setError] = useState('');
 
   const [selectedSeatId, setSelectedSeatId] = useState<number | null>(null);
-  const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
-  const [selectedTime, setSelectedTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [occupantSeat, setOccupantSeat] = useState<ApiSeat | null>(null);
 
-  const timeSlots = generateTimeSlots(userInfo?.bookAheadDays ?? 7);
+  // --- Optimized Time States ---
+  const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
+  const [selectedStartTime, setSelectedStartTime] = useState('');
+  const [selectedDuration, setSelectedDuration] = useState(120); // Default 2 hours
+
+  // --- Generate Options ---
+  const dates = Array.from({ length: (userInfo?.bookAheadDays ?? 7) + 1 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return {
+      full: formatDate(d),
+      day: d.getDate(),
+      weekday: ['日', '一', '二', '三', '四', '五', '六'][d.getDay()],
+      isToday: i === 0
+    };
+  });
+
+  const availableStartTimes = (() => {
+    const times: string[] = [];
+    const now = new Date();
+    const isToday = selectedDate === formatDate(now);
+    
+    for (let h = 8; h <= 19; h++) {
+      for (let m of [0, 30]) {
+        if (h === 19 && m > 30) continue; // 19:30 is the last allowed start time
+        if (isToday) {
+          if (h < now.getHours() || (h === now.getHours() && m <= now.getMinutes())) continue;
+        }
+        times.push(formatTime(h, m));
+      }
+    }
+    return times;
+  })();
+
+  // Calculate End Time
+  const calculatedEndTimeStr = (() => {
+    if (!selectedStartTime) return '';
+    const [h, m] = selectedStartTime.split(':').map(Number);
+    let endM = m + selectedDuration;
+    let endH = h + Math.floor(endM / 60);
+    endM = endM % 60;
+
+    // Cap at 20:00
+    if (endH >= 20) {
+      return '20:00';
+    }
+    return formatTime(endH, endM);
+  })();
+
+  const isDurationCapped = (() => {
+    if (!selectedStartTime) return false;
+    const [h, m] = selectedStartTime.split(':').map(Number);
+    const endMinutes = h * 60 + m + selectedDuration;
+    return endMinutes > 20 * 60;
+  })();
 
   const fetchSeats = useCallback(async () => {
-    if (!id) return;
+    if (!id || !selectedStartTime) return;
     setLoading(true);
     setError('');
     try {
-      const data = await getSeatList(Number(id));
+      const startStr = `${selectedDate} ${selectedStartTime || '08:00'}:00`;
+      const endStr = `${selectedDate} ${calculatedEndTimeStr || '10:00'}:00`;
+      const data = await getSeatList(Number(id), startStr, endStr);
+      if (!data || !data.seats) throw new Error('返回的座位数据异常');
       setSeatData(data);
-      if (!selectedTime && timeSlots.length > 0) {
-        setSelectedTime(timeSlots[0]);
-      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '获取座位信息失败');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, selectedDate, selectedStartTime, calculatedEndTimeStr]);
+
+  useEffect(() => {
+    if (availableStartTimes.length > 0 && !selectedStartTime) {
+      setSelectedStartTime(availableStartTimes[0]);
+    }
+  }, [selectedDate]);
 
   useEffect(() => {
     fetchSeats();
-  }, [fetchSeats]);
+    setSelectedSeatId(null);
+  }, [id, selectedDate, selectedStartTime, calculatedEndTimeStr]);
 
   const handleReserve = async () => {
-    if (!selectedSeatId || !selectedTime || !seatData) return;
+    if (!selectedSeatId || !selectedStartTime || !seatData) return;
     setSubmitError('');
     setSubmitting(true);
     try {
+      const startStr = `${selectedDate} ${selectedStartTime}:00`;
+      const endStr = `${selectedDate} ${calculatedEndTimeStr}:00`;
+      
       await createBook([{
         labId: seatData.labId,
         seatId: selectedSeatId,
-        bookStartTime: toBackendTime(selectedTime),
-        bookEndTime: toBackendTime(selectedTime, true),
+        bookStartTime: startStr,
+        bookEndTime: endStr,
       }]);
       const seat = seatData.seats.find(s => s.id === selectedSeatId);
       navigate('/success', {
@@ -90,8 +137,8 @@ export const Reservation: React.FC = () => {
           labId: seatData.labId,
           seatNo: seat?.seatNo ?? '',
           seatId: selectedSeatId,
-          bookStartTime: selectedTime,
-          bookEndTime: toBackendTime(selectedTime, true).slice(0, 16),
+          bookStartTime: startStr.slice(0, 16),
+          bookEndTime: endStr.slice(0, 16),
         }
       });
     } catch (err: unknown) {
@@ -109,94 +156,133 @@ export const Reservation: React.FC = () => {
   };
 
   return (
-    <div className="bg-surface text-on-surface min-h-screen pb-32">
+    <div className="bg-surface text-on-surface min-h-screen pb-40">
       <Header title={seatData?.labName ?? '实验室预约'} rightAction="more" />
       
-      <main className="px-6 pt-24 space-y-8 max-w-md mx-auto">
-        {loading && (
-          <div className="flex flex-col items-center py-20 gap-3">
-            <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-on-surface-variant text-sm">加载座位信息...</p>
-          </div>
-        )}
-
-        {!loading && error && (
-          <div className="flex flex-col items-center py-16 gap-4 text-center">
-            <AlertCircle className="w-12 h-12 text-outline opacity-40" />
-            <p className="text-on-surface-variant">{error}</p>
-            <button onClick={fetchSeats} className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-xl font-semibold text-sm">
-              <RefreshCw className="w-4 h-4" /> 重试
-            </button>
-          </div>
-        )}
-
-        {!loading && !error && seatData && (
-          <>
-            {/* Time Selection */}
-            <section className="space-y-3">
-              <label className="font-headline font-bold text-on-surface-variant text-sm tracking-widest uppercase flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                预约开始时间
-              </label>
-              <div className="relative">
-                <div 
-                  onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)}
-                  className="bg-surface-container-low rounded-xl p-4 flex items-center justify-between cursor-pointer border-b-2 border-transparent hover:border-primary/30 transition-all"
+      <main className="px-6 pt-24 space-y-8 max-w-md mx-auto pb-10">
+        {/* Optimized Time Selection UI */}
+        <section className="space-y-6">
+          {/* 1. Date Strip */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold text-primary tracking-widest uppercase flex items-center gap-2">
+              <span className="w-1 h-3 bg-primary rounded-full"></span>
+              选择日期
+            </label>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
+              {dates.map((d) => (
+                <button
+                  key={d.full}
+                  onClick={() => setSelectedDate(d.full)}
+                  className={`flex-shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
+                    selectedDate === d.full 
+                    ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105' 
+                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
                 >
-                  <span className="font-headline font-bold text-lg text-primary">{selectedTime || '选择时间'}</span>
-                  <motion.div animate={{ rotate: isTimeDropdownOpen ? 180 : 0 }} transition={{ duration: 0.3 }}>
-                    <ChevronDown className="w-6 h-6 text-primary" />
-                  </motion.div>
-                </div>
+                  <span className="text-[10px] font-bold opacity-70">{d.weekday}</span>
+                  <span className="text-xl font-headline font-black">{d.day}</span>
+                  {d.isToday && <span className="text-[8px] font-bold">今日</span>}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                <AnimatePresence>
-                  {isTimeDropdownOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 4, scale: 1 }}
-                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                      className="absolute top-full left-0 w-full z-[70] mt-2 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden academic-shadow max-h-64 overflow-y-auto"
-                    >
-                      <div className="p-2 grid grid-cols-1 gap-1">
-                        {timeSlots.map((time) => (
-                          <button
-                            key={time}
-                            onClick={() => { setSelectedTime(time); setIsTimeDropdownOpen(false); }}
-                            className={`w-full text-left px-4 py-3 rounded-xl font-medium transition-all flex items-center gap-3 ${
-                              selectedTime === time ? 'bg-primary text-white' : 'hover:bg-primary/10 text-on-surface'
-                            }`}
-                          >
-                            <Clock className={`w-4 h-4 ${selectedTime === time ? 'text-white' : 'text-primary'}`} />
-                            {time}（使用至{String(parseInt(time.slice(11,13))+2).padStart(2,'0')}:00）
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
+          {/* 2. Start Time & Duration */}
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-primary tracking-widest uppercase flex items-center gap-2">
+                <Clock className="w-3 h-3" /> 开始时间
+              </label>
+              <div className="relative group">
+                <select 
+                  value={selectedStartTime}
+                  onChange={(e) => setSelectedStartTime(e.target.value)}
+                  className="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 font-headline font-extrabold text-primary appearance-none focus:ring-2 focus:ring-primary/20 transition-all"
+                >
+                  {availableStartTimes.length > 0 ? (
+                    availableStartTimes.map(t => <option key={t} value={t}>{t}</option>)
+                  ) : (
+                    <option disabled>已闭馆</option>
                   )}
-                </AnimatePresence>
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary pointer-events-none" />
+              </div>
+            </div>
 
-                <p className="text-[10px] font-medium text-outline mt-2 px-1 flex items-center gap-1">
-                  <Info className="w-3 h-3" />
-                  每次固定使用2小时，最多可提前 {userInfo?.bookAheadDays ?? 7} 天预约
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-primary tracking-widest uppercase flex items-center gap-2">
+                <Clock className="w-3 h-3" /> 预约时长
+              </label>
+              <div className="flex gap-2">
+                {[30, 60, 90, 120].map(mins => (
+                  <button
+                    key={mins}
+                    onClick={() => setSelectedDuration(mins)}
+                    className={`flex-1 h-12 rounded-xl text-[10px] font-black transition-all ${
+                      selectedDuration === mins 
+                      ? 'bg-primary text-white shadow-md' 
+                      : 'bg-surface-container-low text-on-surface'
+                    }`}
+                  >
+                    {mins >= 60 ? `${mins/60}h` : `${mins}m`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* End Time Preview */}
+          <div className={`p-4 rounded-2xl border flex items-center justify-between transition-all ${
+            isDurationCapped ? 'bg-amber-50 border-amber-200' : 'bg-primary/5 border-primary/10'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${isDurationCapped ? 'bg-amber-500/10' : 'bg-primary/10'}`}>
+                <Info className={`w-4 h-4 ${isDurationCapped ? 'text-amber-600' : 'text-primary'}`} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">自动计算结束时间</p>
+                <p className={`font-headline font-black text-lg ${isDurationCapped ? 'text-amber-700' : 'text-primary'}`}>
+                  {selectedStartTime} → {calculatedEndTimeStr}
                 </p>
               </div>
-            </section>
+            </div>
+            {isDurationCapped && (
+              <span className="text-[8px] bg-amber-200 text-amber-800 px-2 py-1 rounded-full font-bold">闭馆截断</span>
+            )}
+          </div>
+        </section>
 
+        {loading && (
+          <div className="flex flex-col items-center py-10 gap-3">
+            <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-on-surface-variant text-[10px] font-bold">获取座位状态...</p>
+          </div>
+        )}
+
+        {!loading && availableStartTimes.length === 0 && (
+          <div className="flex flex-col items-center py-10 gap-3 text-center">
+            <ShieldAlert className="w-10 h-10 text-outline opacity-30" />
+            <p className="text-on-surface-variant text-sm font-bold">该日期已过营业时间<br/>请选择明天或以后</p>
+          </div>
+        )}
+
+        {!loading && (availableStartTimes.length > 0 || !error) && seatData && (
+          <>
             {/* Seat Map */}
-            <section className="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_12px_32px_rgba(25,28,35,0.04)] border border-outline-variant/15">
-              <div className="flex justify-between items-end mb-6">
+            <section className="bg-surface-container-lowest rounded-[32px] p-6 shadow-xl shadow-black/5 border border-outline-variant/10">
+              <div className="flex justify-between items-center mb-8">
                 <div>
-                  <h2 className="font-headline font-extrabold text-2xl tracking-tighter text-on-surface">选择座位</h2>
-                  <p className="text-sm text-outline font-medium">{seatData.labName}（共 {seatData.totalSeats} 个座位）</p>
+                  <h2 className="font-headline font-black text-xl tracking-tight text-on-surface">选择座位</h2>
+                  <p className="text-[10px] text-outline font-bold uppercase tracking-widest">{seatData.labName} · {seatData.totalSeats} SEATS</p>
                 </div>
-                <div className="flex flex-col gap-1.5 text-[10px] font-bold uppercase tracking-tighter">
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-secondary"></div><span>空闲</span></div>
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-tertiary-fixed-dim/40"></div><span>已预约</span></div>
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-surface-container-high opacity-50"></div><span>维护中</span></div>
+                <div className="flex gap-2">
+                  <div className="w-2 h-2 rounded-full bg-secondary"></div>
+                  <div className="w-2 h-2 rounded-full bg-tertiary-fixed-dim/40"></div>
+                  <div className="w-2 h-2 rounded-full bg-surface-container-high"></div>
                 </div>
               </div>
 
-              <div className={`grid gap-3 mb-4`} style={{ gridTemplateColumns: `repeat(${seatData.cols || 5}, minmax(0, 1fr))` }}>
+              <div className={`grid gap-2.5 mb-2`} style={{ gridTemplateColumns: `repeat(${seatData.cols || 5}, minmax(0, 1fr))` }}>
                 {seatData.seats.map(seat => (
                   <button
                     key={seat.id}
@@ -205,26 +291,16 @@ export const Reservation: React.FC = () => {
                       if (seat.status === 'FREE') setSelectedSeatId(seat.id);
                       else if (seat.status === 'BOOKED') setOccupantSeat(seat);
                     }}
-                    title={seat.status === 'BOOKED' ? `${seat.bookerName ?? '已预约'} (${seat.bookStartTime}-${seat.bookEndTime})` : seat.status === 'MAINTENANCE' ? seat.maintenanceReason ?? '维护中' : seat.seatNo}
-                    className={`aspect-square rounded-xl font-headline font-bold transition-all active:scale-90 text-xs overflow-hidden relative shadow-sm hover:shadow-md ${getSeatStyle(seat)}`}
+                    className={`aspect-square rounded-xl font-headline font-black transition-all active:scale-95 text-[10px] relative overflow-hidden ${getSeatStyle(seat)}`}
                   >
+                    {selectedSeatId === seat.id && (
+                      <motion.div layoutId="selection" className="absolute inset-0 border-2 border-primary z-20 pointer-events-none rounded-xl" />
+                    )}
                     {seat.status === 'BOOKED' && seat.userAvatar ? (
                       <div className="absolute inset-0 w-full h-full">
-                        <img 
-                          src={seat.userAvatar} 
-                          alt="avatar" 
-                          className="w-full h-full object-cover" 
-                          onError={(e) => {
-                            (e.target as any).style.display = 'none';
-                            (e.target as any).nextSibling.style.display = 'flex';
-                            (e.target as any).nextSibling.nextSibling.style.display = 'none';
-                          }}
-                        />
-                        <div className="hidden absolute inset-0 items-center justify-center bg-tertiary-fixed-dim/20 text-on-surface">
-                          {seat.seatNo}
-                        </div>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end justify-center pb-1 px-0.5">
-                          <span className="text-[7px] text-white font-bold truncate leading-none">{seat.bookerName || '已选'}</span>
+                        <img src={seat.userAvatar} className="w-full h-full object-cover" alt="avatar" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <span className="text-[8px] text-white font-bold">{seat.bookerName?.slice(0, 1) || '👤'}</span>
                         </div>
                       </div>
                     ) : (
@@ -233,29 +309,22 @@ export const Reservation: React.FC = () => {
                   </button>
                 ))}
               </div>
-
-              {selectedSeatId && (
-                <div className="mt-2 p-3 bg-primary/5 rounded-xl text-sm text-primary font-medium">
-                  已选：{seatData.seats.find(s => s.id === selectedSeatId)?.seatNo}
-                </div>
-              )}
             </section>
 
-            {/* Lab Info */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-surface-container-low p-4 rounded-xl space-y-1">
-                <span className="text-[10px] text-outline font-bold uppercase tracking-wider block">负责人</span>
-                <p className="font-headline font-bold text-on-surface">{seatData ? (seatData as any).managerName ?? '—' : '—'}</p>
+              <div className="bg-surface-container-low p-4 rounded-3xl space-y-1">
+                <span className="text-[8px] text-outline font-black uppercase tracking-widest block">负责人</span>
+                <p className="font-headline font-bold text-on-surface text-sm">{ (seatData as any).managerName ?? '—'}</p>
               </div>
-              <div className="bg-surface-container-low p-4 rounded-xl space-y-1">
-                <span className="text-[10px] text-outline font-bold uppercase tracking-wider block">邮箱</span>
-                <p className="font-headline font-bold text-on-surface text-xs truncate">{seatData ? (seatData as any).managerEmail ?? '—' : '—'}</p>
+              <div className="bg-surface-container-low p-4 rounded-3xl space-y-1">
+                <span className="text-[8px] text-outline font-black uppercase tracking-widest block">实验室邮箱</span>
+                <p className="font-headline font-bold text-on-surface text-[10px] truncate">{ (seatData as any).managerEmail ?? '—'}</p>
               </div>
             </div>
 
             {submitError && (
-              <div className="flex items-center gap-2 text-sm text-red-500 bg-red-50 px-4 py-3 rounded-xl">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <div className="flex items-center gap-3 text-[11px] font-bold text-red-500 bg-red-50 p-4 rounded-2xl border border-red-100">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
                 {submitError}
               </div>
             )}
@@ -263,7 +332,6 @@ export const Reservation: React.FC = () => {
         )}
       </main>
 
-      {/* 占座人信息高斯模糊弹窗 */}
       <AnimatePresence>
         {occupantSeat && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
@@ -341,10 +409,10 @@ export const Reservation: React.FC = () => {
           <div className="max-w-md mx-auto">
             <button 
               onClick={handleReserve}
-              disabled={!selectedSeatId || !selectedTime || submitting}
+              disabled={!selectedSeatId || !selectedStartTime || submitting}
               className="w-full bg-gradient-to-b from-primary to-primary-container text-on-primary py-4 rounded-xl font-headline font-extrabold text-lg tracking-tight shadow-lg shadow-primary/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? '预约中...' : !selectedSeatId ? '请先选择座位' : !selectedTime ? '请先选择时间' : '立即预约'}
+              {submitting ? '预约中...' : !selectedSeatId ? '请先选择座位' : !selectedStartTime ? '请先选择时间' : '立即预约'}
             </button>
           </div>
         </div>

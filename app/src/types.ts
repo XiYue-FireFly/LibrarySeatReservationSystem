@@ -19,7 +19,9 @@ export interface UserInfo {
   avatar: string | null;
   role: 'STUDENT' | 'ADMIN' | 'SUPER_ADMIN';
   punishStatus: boolean;
+  punishEndTime: string | null;
   bookAheadDays: number;
+  violationCount: number;
 }
 
 /** 实验室（后端返回） */
@@ -41,7 +43,7 @@ export interface ApiSeat {
   id: number;
   labId: number;
   seatNo: string;
-  status: 'FREE' | 'BOOKED' | 'MAINTENANCE';
+  status: 'FREE' | 'BOOKED' | 'MAINTENANCE' | 'IN_USE';
   maintenanceReason: string | null;
   restoreTime: string | null;
   userAvatar: string | null;
@@ -73,7 +75,7 @@ export interface ApiBookRecord {
   seatId: number;
   bookStartTime: string;
   bookEndTime: string;
-  status: 'PENDING' | 'CHECKED_IN' | 'FINISHED' | 'CANCELLED';
+  status: 'PENDING' | 'CHECKED_IN' | 'FINISHED' | 'CANCELLED' | 'EXPIRED';
   cancelReason: string | null;
   createTime: string;
   updateTime: string;
@@ -101,6 +103,17 @@ export interface ApiFeedback {
   adminReply?: string;
   createTime: string;
   updateTime: string;
+}
+
+/** 系统通知 */
+export interface ApiNotification {
+  id: number;
+  userId: number;
+  title: string;
+  content: string;
+  type: 'SUCCESS' | 'ERROR' | 'WARNING' | 'INFO';
+  isRead: boolean;
+  createTime: string;
 }
 
 // ========================

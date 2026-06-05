@@ -9,5 +9,8 @@ public class User {
     private String name;
     private String userName;
     private String avatar;
+    private Integer violationCount;
+    private Boolean punishStatus;
+    private java.util.Date punishEndTime;
     private String role;
 }

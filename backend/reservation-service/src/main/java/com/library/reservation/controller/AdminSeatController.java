@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.library.common.core.Result;
 import com.library.reservation.entity.Lab;
 import com.library.reservation.entity.Seat;
+import com.library.reservation.entity.BookRecord;
 import com.library.reservation.mapper.LabMapper;
 import com.library.reservation.mapper.SeatMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -119,14 +120,59 @@ public class AdminSeatController {
         return Result.success();
     }
 
+    @Autowired
+    private com.library.reservation.feign.UserServiceClient userServiceClient;
+
+    @Autowired
+    private com.library.reservation.mapper.BookRecordMapper bookRecordMapper;
+
     /**
-     * 获取实验室座位（含状态）
+     * 获取实验室座位（含状态和当前时段预约详情）
      */
     @GetMapping("/list")
-    public Result<List<Seat>> getSeatList(@RequestParam Long labId) {
-        return Result.success(seatMapper.selectList(
+    public Result<List<Seat>> getSeatList(
+            @RequestParam Long labId,
+            @RequestParam(value = "startTime", required = false) @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.util.Date startTime,
+            @RequestParam(value = "endTime", required = false) @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.util.Date endTime) {
+        
+        List<Seat> seats = seatMapper.selectList(
             new LambdaQueryWrapper<Seat>().eq(Seat::getLabId, labId).orderByAsc(Seat::getId)
-        ));
+        );
+
+        // 如果提供了时间段，则进行增强查询
+        if (startTime != null && endTime != null) {
+            for (Seat seat : seats) {
+                // 查找该时段冲突的预约
+                BookRecord record = bookRecordMapper.selectOne(new LambdaQueryWrapper<BookRecord>()
+                    .eq(BookRecord::getSeatId, seat.getId())
+                    .in(BookRecord::getStatus, "PENDING", "CHECKED_IN")
+                    .and(w -> w.le(BookRecord::getBookStartTime, endTime).ge(BookRecord::getBookEndTime, startTime))
+                    .orderByDesc(BookRecord::getCreateTime).last("LIMIT 1")
+                );
+
+                if (record != null) {
+                    seat.setStatus("BOOKED");
+                    seat.setBookerId(record.getUserId());
+                    
+                    // 获取非脱敏用户信息
+                    try {
+                        com.library.common.core.Result<com.library.reservation.entity.User> userRes = userServiceClient.getUserById(record.getUserId());
+                        if (userRes.getCode() == 200 && userRes.getData() != null) {
+                            com.library.reservation.entity.User user = userRes.getData();
+                            seat.setUserAvatar(user.getAvatar());
+                            seat.setBookerName(user.getName()); // No masking for Admin
+                            seat.setBookerAccount(user.getAccount()); // No masking for Admin
+                            
+                            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm");
+                            seat.setBookStartTime(record.getBookStartTime() != null ? sdf.format(record.getBookStartTime()) : "");
+                            seat.setBookEndTime(record.getBookEndTime() != null ? sdf.format(record.getBookEndTime()) : "");
+                        }
+                    } catch (Exception e) {}
+                }
+            }
+        }
+
+        return Result.success(seats);
     }
 
     /**

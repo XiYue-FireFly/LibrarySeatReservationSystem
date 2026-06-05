@@ -21,6 +21,15 @@
                 <input v-model="editUserName" type="text" class="glass-input" />
               </div>
 
+              <!-- Punishment Status -->
+              <div v-if="user.punishStatus && remainingBanTime" class="punishment-notice mt-4">
+                <div class="notice-icon">🚫</div>
+                <div class="notice-body">
+                  <p class="notice-title">账号处罚中</p>
+                  <p class="notice-desc">违纪满 {{ user.violationCount }} 次，距离解封还剩: <br> <strong>{{ remainingBanTime }}</strong></p>
+                </div>
+              </div>
+
               <!-- Avatar Selection -->
               <div class="form-group mt-4">
                 <label>修改头像</label>
@@ -217,8 +226,8 @@ const handleFileUpload = async (event) => {
   const file = event.target.files[0]
   if (!file) return
   
-  if (file.size > 2 * 1024 * 1024) {
-    alert('文件大小不能超过 2MB')
+  if (file.size > 20 * 1024 * 1024) {
+    alert('文件大小不能超过 20MB')
     return
   }
 
@@ -287,6 +296,7 @@ const statusTabs = [
   { label: '预约中', value: 'PENDING' },
   { label: '进行中', value: 'CHECKED_IN' },
   { label: '已完成', value: 'FINISHED' },
+  { label: '已过期', value: 'EXPIRED' },
   { label: '已取消', value: 'CANCELLED' },
 ]
 
@@ -315,12 +325,37 @@ const fetchBooks = async () => {
         books.value = books.value.filter(b => new Date(b.createTime || b.bookStartTime) >= limitDate)
       }
     }
+    
+    // Fetch user details for punishment info
+    const userRes = await request.get(`/student/user/info`) // I'll assume this endpoint exists or will add it to UserController
+    if (userRes.code === 200) {
+      user.value = { ...user.value, ...userRes.data }
+      localStorage.setItem('user', JSON.stringify(user.value))
+    }
   } catch (e) {
     console.error(e)
   } finally {
     loadingBooks.value = false
   }
 }
+
+const remainingBanTime = computed(() => {
+  if (!user.value.punishEndTime) return null
+  const end = new Date(user.value.punishEndTime).getTime()
+  const now = new Date().getTime()
+  const diff = end - now
+  if (diff <= 0) return null
+  
+  const days = Math.floor(diff / (24 * 3600 * 1000))
+  const hours = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000))
+  const minutes = Math.floor((diff % (3600 * 1000)) / (60 * 1000))
+  
+  let str = ''
+  if (days > 0) str += `${days} 天 `
+  if (hours > 0) str += `${hours} 小时 `
+  str += `${minutes} 分钟`
+  return str
+})
 
 watch(timeFilter, () => {
   fetchBooks()
@@ -331,6 +366,7 @@ const formatStatus = (s) => {
     'PENDING': '待签到',
     'CHECKED_IN': '已签到',
     'FINISHED': '已结束',
+    'EXPIRED': '已违纪(过期)',
     'CANCELLED': '已取消'
   }
   return map[s] || s
@@ -505,7 +541,36 @@ onMounted(() => {
 .status-badge.pending { background: var(--warning); color: #000; }
 .status-badge.checked_in { background: var(--success); color: #fff; }
 .status-badge.finished { background: var(--text-muted); color: #fff; }
+.status-badge.expired { background: #fee2e2; color: #991b1b; }
 .status-badge.cancelled { background: var(--danger); color: #fff; }
+
+.punishment-notice {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.notice-icon {
+  font-size: 1.5rem;
+}
+
+.notice-title {
+  font-weight: 700;
+  color: #ef4444;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.notice-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
 
 /* Status Filter Tabs */
 .status-tabs {

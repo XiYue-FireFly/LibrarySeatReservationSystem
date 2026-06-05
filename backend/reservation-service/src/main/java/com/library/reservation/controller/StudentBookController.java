@@ -20,6 +20,9 @@ public class StudentBookController {
 
     @Autowired
     private SeatMapper seatMapper;
+    
+    @Autowired
+    private com.library.reservation.feign.UserServiceClient userServiceClient;
 
     /**
      * 获取个人的预约记录
@@ -48,8 +51,46 @@ public class StudentBookController {
         }
 
         Long uid = Long.parseLong(userId);
-
+        
+        // Check if user is punished
+        try {
+            com.library.common.core.Result<com.library.reservation.entity.User> userRes = userServiceClient.getUserById(uid);
+            if (userRes != null && userRes.getData() != null) {
+                com.library.reservation.entity.User user = userRes.getData();
+                if (Boolean.TRUE.equals(user.getPunishStatus())) {
+                    Date now = new Date();
+                    if (user.getPunishEndTime() != null && user.getPunishEndTime().after(now)) {
+                        String dateStr = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(user.getPunishEndTime());
+                        return Result.error("您的账号目前处于违纪封禁状态，预计解封时间：" + dateStr + "。如有疑问请联系管理员。");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to check user punishStatus: " + e.getMessage());
+        }
+        
+        // Time restriction check: 08:00 - 20:00
+        java.util.Calendar cal = java.util.Calendar.getInstance();
         for (BookRecord record : bookRecords) {
+            if (record.getBookStartTime() == null || record.getBookEndTime() == null) {
+                return Result.error("预约时间不能为空");
+            }
+            
+            cal.setTime(record.getBookStartTime());
+            int startHour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+            cal.setTime(record.getBookEndTime());
+            int endHour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+            int endMinute = cal.get(java.util.Calendar.MINUTE);
+
+            // 限制：8点之前或20点之后不能预约
+            // 注意：20:00整是可以作为结束时间的，但不能超过20:00
+            if (startHour < 8 || startHour >= 20) {
+                return Result.error("预约起始时间必须在 08:00 - 20:00 之间");
+            }
+            if (endHour > 20 || (endHour == 20 && endMinute > 0)) {
+                return Result.error("预约结束时间不能超过 20:00");
+            }
+
             // 1. 检查座位是否已被预约（时间冲突）
             Long seatConflict = bookRecordMapper.selectCount(new LambdaQueryWrapper<BookRecord>()
                     .eq(BookRecord::getSeatId, record.getSeatId())
@@ -87,6 +128,21 @@ public class StudentBookController {
             seatUpdate.setId(record.getSeatId());
             seatUpdate.setStatus("BOOKED");
             seatMapper.updateById(seatUpdate);
+
+            // 4. 发送预约成功通知
+            try {
+                com.library.reservation.entity.Notification notice = new com.library.reservation.entity.Notification();
+                notice.setUserId(uid);
+                notice.setTitle("🎉 预约成功通知");
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MM-dd HH:mm");
+                notice.setContent("您的座位预约已成功！座位号：" + record.getSeatId() + "，时段：" + 
+                    sdf.format(record.getBookStartTime()) + " - " + sdf.format(record.getBookEndTime()) + 
+                    "。请务必准时到达并签到。");
+                notice.setType("SUCCESS");
+                userServiceClient.sendNotification(notice);
+            } catch (Exception e) {
+                System.err.println("Failed to send booking notification: " + e.getMessage());
+            }
         }
 
         return Result.success();

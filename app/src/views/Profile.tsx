@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Header } from '../components/Header';
 import { BottomNav } from '../components/BottomNav';
 import { AppointmentCard } from '../components/AppointmentCard';
-import { IdCard, Edit, LogOut, RefreshCw, WifiOff, MessageSquareQuote, MapPin, Clock, Calendar, CheckCircle } from 'lucide-react';
+import { IdCard, Edit, LogOut, RefreshCw, WifiOff, MessageSquareQuote, MapPin, Clock, Calendar, CheckCircle, AlertTriangle, Scan, X, Shield } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { http } from '../api/request';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/auth';
-import { getMyBookList, cancelBook } from '../api/user';
+import { getMyBookList, cancelBook, verifyQRToken } from '../api/user';
 import { ApiBookRecord } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -27,6 +29,9 @@ export const Profile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBook, setSelectedBook] = useState<ApiBookRecord | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [currentScanRecord, setCurrentScanRecord] = useState<ApiBookRecord | null>(null);
 
   const fetchBooks = async () => {
     setLoading(true);
@@ -60,6 +65,108 @@ export const Profile: React.FC = () => {
     navigate('/', { replace: true });
   };
 
+  const startScanner = (record: ApiBookRecord) => {
+    setCurrentScanRecord(record);
+    setScanning(true);
+    // We will initialize the scanner in a useEffect or after a small delay to ensure the container is ready
+    setTimeout(() => {
+      const html5QrCode = new Html5Qrcode("reader", {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+      });
+      const qrCodeSuccessCallback = async (decodedText: string) => {
+        try {
+          html5QrCode.stop().then(async () => {
+            setScanning(false);
+            setScanLoading(true);
+            try {
+              const cleanedText = decodedText.trim();
+              let data: any = null;
+
+              // 1. Try New Pipe Protocol (High Reliability)
+              if (cleanedText.includes('|')) {
+                const parts = cleanedText.split('|');
+                if (parts.length === 3) {
+                  data = { 
+                    token: parts[0].replace(/[\s"']/g, ''), 
+                    bookingId: parts[1].replace(/[\s"']/g, ''), 
+                    type: parts[2].replace(/[\s"']/g, '') 
+                  };
+                }
+              }
+
+              // 2. Try REGEX extraction (Legacy or Broken JSON/OCR)
+              if (!data) {
+                // Ignore quotes, braces, brackets, spaces. Just look for key-value pairs.
+                // Tolerates "Id", "ld", "ID", "id"
+                // The group [^",|} \t\n]+ ensures we stop at separators and don't include them
+                const tokenMatch = cleanedText.match(/token"??\s*[:：]\s*"??([^",|} \t\n]+)"??/i);
+                const idMatch = cleanedText.match(/booking[iI1l]d"??\s*[:：]\s*"??([^",|} \t\n]+)"??/i);
+                const typeMatch = cleanedText.match(/type"??\s*[:：]\s*"??([^",|} \t\n]+)"??/i);
+                
+                if (tokenMatch && idMatch && typeMatch) {
+                  data = {
+                    token: tokenMatch[1].replace(/[\s"']/g, ''),
+                    bookingId: idMatch[1].replace(/[\s"']/g, ''),
+                    type: typeMatch[1].replace(/[\s"']/g, '')
+                  };
+                }
+              }
+
+              // 3. Final Validation & Request
+              if (data && data.token && data.bookingId && data.type) {
+                const normalizedData = {
+                   token: data.token,
+                   bookingId: data.bookingId,
+                   type: data.type.toUpperCase()
+                };
+
+                // Move API call outside of current try-catch if possible, 
+                // OR use a separate try-catch to differentiate Errors
+                try {
+                  const res: any = await verifyQRToken(normalizedData);
+                  alert('🎉 签到/签退成功！');
+                  fetchBooks();
+                  setScanning(false);
+                } catch (apiErr: any) {
+                  alert('验证失败：' + (apiErr.message || '服务器响应异常'));
+                }
+              } else {
+                alert('无法识别二维码内容！\n\n识别文本:\n' + cleanedText);
+              }
+            } catch (e) {
+              alert('扫码解析异常，请重试');
+              console.error(e);
+            } finally {
+              setScanLoading(false);
+            }
+          }).catch(err => {
+            console.error(err);
+            setScanning(false);
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      
+      const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number) => {
+        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+        const qrboxSize = Math.floor(minEdge * 0.7);
+        return {
+          width: qrboxSize,
+          height: qrboxSize
+        };
+      };
+      const config = { fps: 10, qrbox: qrboxFunction };
+      html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback, (errorMessage) => {
+        // console.warn(errorMessage);
+      })
+        .catch(err => {
+          alert("开启摄像头失败，请检查权限 (请确保在 HTTPS 下运行)");
+          setScanning(false);
+        });
+    }, 100);
+  };
+
   const filteredRecords = bookRecords.filter(r => {
     if (activeTab === 'all') return true;
     if (activeTab === 'ongoing') return r.status === 'PENDING' || r.status === 'CHECKED_IN';
@@ -74,6 +181,58 @@ export const Profile: React.FC = () => {
       <Header title="个人中心" showBack={false} rightAction="bell" />
       
       <main className="pt-24 px-6 space-y-8">
+        {/* Punishment Notice */}
+        {userInfo?.punishStatus && userInfo?.punishEndTime && (
+          <motion.section 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-red-50 border border-red-200 rounded-3xl p-5 flex items-center gap-4 shadow-sm"
+          >
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-red-800 font-bold text-sm">账户处于封禁中</h3>
+              <p className="text-red-600 text-[11px] leading-snug mt-1">
+                违纪次数：{userInfo.violationCount} 次<br/>
+                预计解封：{userInfo.punishEndTime.replace('T', ' ').slice(0, 16)}
+              </p>
+            </div>
+          </motion.section>
+        )}
+
+        {/* Admin Debug Info (Only for development/admin check) */}
+        {(userInfo?.role === 'ADMIN' || userInfo?.role === 'SUPER_ADMIN' || String(userInfo?.role).toUpperCase() === 'ADMIN') && (
+          <div className="bg-slate-800 text-white/50 text-[8px] p-2 rounded-lg font-mono truncate">
+            DEBUG: ID={userInfo.id} ROLE={userInfo.role}
+          </div>
+        )}
+
+        {/* Admin Portal Entry */}
+        {(userInfo?.role === 'ADMIN' || userInfo?.role === 'SUPER_ADMIN' || String(userInfo?.role).toUpperCase() === 'ADMIN') && (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-indigo-600 rounded-3xl p-6 shadow-lg shadow-indigo-200 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-base">管理员工作台</h3>
+                <p className="text-white/70 text-xs mt-0.5">管理预约、生成签到码</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/admin-portal')}
+              className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-bold text-sm shadow-sm active:scale-95 transition-transform"
+            >
+              进入
+            </button>
+          </motion.section>
+        )}
+
         {/* Profile Card */}
         <section className="relative overflow-hidden rounded-3xl bg-surface-container-low p-6 shadow-sm">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
@@ -176,6 +335,7 @@ export const Profile: React.FC = () => {
               record={record}
               onCancel={record.status === 'PENDING' ? handleCancel : undefined}
               onViewDetails={setSelectedBook}
+              onScan={startScanner}
             />
           ))}
         </div>
@@ -249,6 +409,48 @@ export const Profile: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* QR Scanner Overlay */}
+      <AnimatePresence>
+        {scanning && (
+          <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black">
+            <div className="absolute top-10 right-6 z-[210]">
+              <button 
+                onClick={() => {
+                  setScanning(false);
+                  // Manually stop if user closes
+                  window.location.reload(); // Simple way to clean up camera if stopped via UI
+                }}
+                className="p-3 bg-white/20 rounded-full backdrop-blur-md text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="text-center mb-8 px-6">
+              <h3 className="text-white text-xl font-bold">请对准签到二维码</h3>
+              <p className="text-white/60 text-sm mt-2">操作对象：{currentScanRecord?.labName} - {currentScanRecord?.seatNo}</p>
+            </div>
+
+            <div id="reader" className="w-[300px] h-[300px] overflow-hidden rounded-3xl border-2 border-indigo-500 shadow-[0_0_50px_rgba(99,102,241,0.5)]"></div>
+            
+            <div className="mt-12 text-white/40 text-xs flex items-center gap-2">
+              <Scan className="w-4 h-4 animate-pulse" />
+              扫描管理员提供的动态二维码进行确认
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* global loading for verification */}
+      {scanLoading && (
+        <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-8 flex flex-col items-center gap-4">
+            <RefreshCw className="w-10 h-10 text-primary animate-spin" />
+            <p className="font-bold text-primary">正在验证中...</p>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </div>

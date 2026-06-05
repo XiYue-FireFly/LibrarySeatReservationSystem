@@ -1,17 +1,19 @@
 import React from 'react';
-import { Calendar, Armchair, ChevronRight, X } from 'lucide-react';
+import { Calendar, Armchair, ChevronRight, X, Scan } from 'lucide-react';
 import { ApiBookRecord } from '../types';
 
 interface AppointmentCardProps {
   record: ApiBookRecord;
   onCancel?: (bookId: number) => void;
   onViewDetails?: (record: ApiBookRecord) => void;
+  onScan?: (record: ApiBookRecord) => void;
 }
 
 const STATUS_INFO: Record<string, { label: string; color: string; bg: string }> = {
   PENDING:    { label: '待签到',  color: 'text-primary',   bg: 'bg-primary/10' },
   CHECKED_IN: { label: '已签到',  color: 'text-emerald-600', bg: 'bg-emerald-50' },
   FINISHED:   { label: '已结束',  color: 'text-outline',   bg: 'bg-surface-container-high' },
+  EXPIRED:    { label: '已违纪',  color: 'text-red-600',   bg: 'bg-red-50' },
   CANCELLED:  { label: '已取消',  color: 'text-red-400',   bg: 'bg-red-50' },
 };
 
@@ -21,7 +23,7 @@ function formatTime(isoStr: string): string {
   return isoStr.replace('T', ' ').slice(0, 16);
 }
 
-export const AppointmentCard: React.FC<AppointmentCardProps> = ({ record, onCancel, onViewDetails }) => {
+export const AppointmentCard: React.FC<AppointmentCardProps> = ({ record, onCancel, onViewDetails, onScan }) => {
   const statusInfo = STATUS_INFO[record.status] ?? STATUS_INFO.FINISHED;
   const borderColor = record.status === 'PENDING' ? 'border-primary' : record.status === 'CHECKED_IN' ? 'border-emerald-500' : 'border-outline-variant/40';
 
@@ -60,6 +62,15 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ record, onCanc
         </div>
         
         <div className="flex items-center gap-2">
+          {onScan && (record.status?.trim().toUpperCase() === 'PENDING' || record.status?.trim().toUpperCase() === 'CHECKED_IN') && (
+            <button
+              onClick={() => onScan(record)}
+              className="flex items-center gap-1 px-3 py-1.5 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg text-xs font-bold transition-all shadow-md active:scale-95"
+            >
+              <Scan className="w-3.5 h-3.5" />
+              {record.status?.trim().toUpperCase() === 'PENDING' ? '扫码签到' : '扫码签退'}
+            </button>
+          )}
           {onCancel && record.status === 'PENDING' && (
             <button
               onClick={() => onCancel(record.id)}

@@ -4,12 +4,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.library.common.core.Result;
 import com.library.common.utils.JwtUtils;
 import com.library.user.entity.User;
+import com.library.user.entity.Notification;
 import com.library.user.mapper.UserMapper;
+import com.library.user.mapper.NotificationMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -63,8 +66,11 @@ public class UserController {
         // Clear failure counter on success
         loginFailures.remove(account);
 
-        if ("STUDENT".equals(expectedRolePrefix) && !"STUDENT".equals(user.getRole())) {
-            return Result.error("非学生账号，请前往管理端登录");
+        if ("STUDENT".equals(expectedRolePrefix)) {
+            // Allow Student login path for Admins/SuperAdmins as well (for mobile app compatibility)
+            if (!"STUDENT".equals(user.getRole()) && !"ADMIN".equals(user.getRole()) && !"SUPER_ADMIN".equals(user.getRole())) {
+                return Result.error("非法角色登录");
+            }
         }
         
         if ("ADMIN".equals(expectedRolePrefix) && "STUDENT".equals(user.getRole())) {
@@ -144,6 +150,16 @@ public class UserController {
     }
 
     /**
+     * 获取个人完整信息 (学生端刷新)
+     */
+    @GetMapping("/api/student/user/info")
+    public Result<User> getStudentInfo(@RequestHeader("X-User-Id") String userId) {
+        User user = userMapper.selectById(Long.parseLong(userId));
+        if (user != null) user.setPassword(null);
+        return Result.success(user);
+    }
+
+    /**
      * 修改个人信息 (用户名与头像)
      */
     @PutMapping("/api/student/user/info/update")
@@ -196,6 +212,64 @@ public class UserController {
     public Result<User> getUserByAccount(@PathVariable("account") String account) {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getAccount, account));
         return Result.success(user);
+    }
+
+    @Autowired
+    private NotificationMapper notificationMapper;
+
+    /**
+     * 内部接口: 记录一次违纪
+     */
+    @PutMapping("/internal/user/violation/{id}")
+    public Result<Void> reportViolation(@PathVariable("id") Long id) {
+        User user = userMapper.selectById(id);
+        if (user == null) return Result.error("用户不存在");
+
+        User updater = new User();
+        updater.setId(id);
+        int newCount = (user.getViolationCount() == null ? 0 : user.getViolationCount()) + 1;
+        updater.setViolationCount(newCount);
+        
+        long fifteenDaysMs = 15L * 24 * 3600 * 1000;
+        Date now = new Date();
+        
+        // 达到3次或3的倍数进行封禁/延长封禁
+        if (newCount >= 3) {
+            updater.setPunishStatus(true);
+            Date currentEnd = user.getPunishEndTime();
+            Date newEnd;
+            if (currentEnd != null && currentEnd.after(now)) {
+                // 累加封禁
+                newEnd = new Date(currentEnd.getTime() + fifteenDaysMs);
+            } else {
+                // 新增封禁
+                newEnd = new Date(now.getTime() + fifteenDaysMs);
+            }
+            updater.setPunishEndTime(newEnd);
+            
+            // 发送通知
+            Notification notice = new Notification();
+            notice.setUserId(id);
+            notice.setTitle("🚨 违纪封禁通知");
+            notice.setContent("由于您的预约违纪次数已达到 " + newCount + " 次，系统已对您的账号执行封禁。封禁解除时间：" + 
+                new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(newEnd) + "。请自觉遵守实验室规定。");
+            notice.setType("ERROR");
+            notice.setCreateTime(now);
+            notificationMapper.insert(notice);
+        } else {
+            // 普通提醒
+            Notification notice = new Notification();
+            notice.setUserId(id);
+            notice.setTitle("⚠️ 违纪预警");
+            notice.setContent("您刚才有一笔预约因逾期未签到被系统记录违纪。当前累计违纪：" + newCount + 
+                " 次。达到 3 次将面临 15 天封禁。");
+            notice.setType("WARNING");
+            notice.setCreateTime(now);
+            notificationMapper.insert(notice);
+        }
+        
+        userMapper.updateById(updater);
+        return Result.success();
     }
 
     private String maskAccount(String account) {

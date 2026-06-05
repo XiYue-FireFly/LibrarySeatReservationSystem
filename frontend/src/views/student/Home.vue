@@ -39,31 +39,82 @@
             暂未选择实验室
           </div>
           <div v-else>
-            <!-- Booking Settings -->
-            <div class="booking-settings">
-              <div class="setting-item flex flex-col gap-2">
-                <label class="font-bold">选择时间段 (最长2小时): </label>
-                <div class="flex items-center gap-2">
-                  <input type="datetime-local" v-model="bookStartTime" :min="minDatetime" :max="maxDatetime" class="glass-input time-input" />
-                  <span> 至 </span>
-                  <input type="datetime-local" v-model="bookEndTime" :min="minDatetime" :max="maxDatetime" class="glass-input time-input" />
+            <!-- Optimized Booking Settings -->
+            <div class="booking-settings-v2 bg-white/40 backdrop-blur-md rounded-2xl p-6 border border-white/20 mb-6 shadow-sm">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Date Picker -->
+                <div class="flex flex-col gap-2">
+                  <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <span class="w-1 h-3 bg-indigo-500 rounded-full"></span> 选择日期
+                  </label>
+                  <input type="date" v-model="selectedDate" :min="minDateStr" :max="maxDateStr" class="glass-input-new" />
+                </div>
+
+                <!-- Start Time Picker -->
+                <div class="flex flex-col gap-2">
+                  <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <span class="w-1 h-3 bg-indigo-500 rounded-full"></span> 开始时间
+                  </label>
+                  <select v-model="selectedStartTime" class="glass-select-new">
+                    <option v-for="t in availableTimes" :key="t" :value="t">{{ t }}</option>
+                    <option v-if="availableTimes.length === 0" disabled>已闭馆</option>
+                  </select>
+                </div>
+
+                <!-- Duration Picker -->
+                <div class="flex flex-col gap-2">
+                  <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <span class="w-1 h-3 bg-indigo-500 rounded-full"></span> 预约时长
+                  </label>
+                  <div class="flex gap-2">
+                    <button 
+                      v-for="d in [30, 60, 90, 120]" 
+                      :key="d" 
+                      @click="selectedDuration = d"
+                      class="duration-chip"
+                      :class="{ active: selectedDuration === d }"
+                    >
+                      {{ d >= 60 ? (d/60) + 'h' : d + 'm' }}
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div class="setting-item flex items-center gap-4">
-                <button class="glass-button secondary-btn" @click="showManagerModal = true">
-                   📞 联系负责人
-                </button>
-                <button class="glass-button" @click="toggleBatchMode">
-                  {{ isBatchMode ? '退出批量预约' : '批量预约 (最多3个)' }}
-                </button>
+
+              <!-- Calculation Status -->
+              <div class="mt-6 flex items-center justify-between p-4 rounded-xl bg-slate-50/80 border border-slate-200/50">
+                <div class="flex items-center gap-4">
+                  <div class="status-icon" :class="{ warning: isCappedAtClosing }">
+                    <svg v-if="!isCappedAtClosing" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                    </svg>
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                  </div>
+                  <div>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">自动计算结束时间</span>
+                    <span class="font-mono font-bold text-slate-700">
+                      {{ selectedStartTime || '--:--' }} &rarr; <span :class="{ 'text-amber-600': isCappedAtClosing }">{{ calculatedEndTime || '--:--' }}</span>
+                    </span>
+                  </div>
+                </div>
+                <div v-if="isCappedAtClosing" class="text-right">
+                  <span class="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded-full">闭馆截断</span>
+                </div>
               </div>
             </div>
-            
-            <div class="seats-legend">
-              <div class="legend-item"><span class="seat-cube free"></span> 空闲</div>
-              <div class="legend-item"><span class="seat-cube booked"></span> 预约中/使用中</div>
-              <div class="legend-item"><span class="seat-cube maintenance"></span> 维护故障</div>
-              <div class="legend-item"><span class="seat-cube selected"></span> 已选</div>
+
+            <div class="flex items-center justify-between mb-4">
+              <div class="seats-legend">
+                <div class="legend-item"><span class="seat-cube free"></span> 空闲</div>
+                <div class="legend-item"><span class="seat-cube booked"></span> 预约中/使用中</div>
+                <div class="legend-item"><span class="seat-cube maintenance"></span> 维护故障</div>
+                <div class="legend-item"><span class="seat-cube selected"></span> 已选</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="glass-button secondary-btn" @click="showManagerModal = true">📞 联系负责人</button>
+                <button class="glass-button" @click="toggleBatchMode">{{ isBatchMode ? '退出批量' : '批量预约' }}</button>
+              </div>
             </div>
 
             <div v-if="loadingSeats" class="loading mt-4">座位加载中...</div>
@@ -216,7 +267,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import NavBar from '../../components/NavBar.vue'
 import GlassCard from '../../components/GlassCard.vue'
@@ -240,41 +291,69 @@ const labLayoutConfig = ref(null)
 
 const isBatchMode = ref(false)
 
-// Row-by-row layout computation
-const computedRowSeats = computed(() => {
-  if (!labLayoutConfig.value) return []
-  const rows = []
-  const rowCounts = labLayoutConfig.value.split(',').map(Number)
-  let i = 0
-  for (const count of rowCounts) {
-    rows.push(seats.value.slice(i, i + count))
-    i += count
-  }
-  // Any leftover seats
-  if (i < seats.value.length) rows.push(seats.value.slice(i))
-  return rows
-})
-
-const toDatetimeLocal = (d) => {
+// --- New Time Selection Logic ---
+const formatDate = (date) => {
   const pad = n => n.toString().padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-const nowObj = new Date()
-nowObj.setMinutes(Math.ceil(nowObj.getMinutes() / 30) * 30, 0, 0) // Next nearest 30 mins
+const formatTime = (h, m) => {
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
+}
 
-const minDateObj = new Date()
-minDateObj.setMinutes(minDateObj.getMinutes() - 5) // Give a 5 minute leeway
+const bookStartTime = ref('')
+const bookEndTime = ref('')
 
-const maxDateObj = new Date()
-maxDateObj.setDate(maxDateObj.getDate() + 3)
-maxDateObj.setHours(23, 59, 59, 0)
+const selectedDate = ref(formatDate(new Date()))
+const selectedStartTime = ref('')
+const selectedDuration = ref(120) // Default 2 hours
 
-const minDatetime = ref(toDatetimeLocal(minDateObj))
-const maxDatetime = ref(toDatetimeLocal(maxDateObj))
+const minDateStr = ref(formatDate(new Date()))
+const maxDateStr = ref('')
+onMounted(() => {
+  const maxD = new Date()
+  maxD.setDate(maxD.getDate() + 7) // 7 days ahead
+  maxDateStr.value = formatDate(maxD)
+})
 
-const bookStartTime = ref(toDatetimeLocal(nowObj))
-const bookEndTime = ref(toDatetimeLocal(new Date(nowObj.getTime() + 2 * 3600 * 1000)))
+const availableTimes = computed(() => {
+  const times = []
+  const now = new Date()
+  const isToday = selectedDate.value === formatDate(now)
+  
+  for (let h = 8; h <= 19; h++) {
+    for (let m of [0, 30]) {
+      if (h === 19 && m > 30) continue // 19:30 is last start
+      if (isToday) {
+        if (h < now.getHours() || (h === now.getHours() && m <= now.getMinutes())) continue
+      }
+      times.push(formatTime(h, m))
+    }
+  }
+  return times
+})
+
+watch(availableTimes, (newTimes) => {
+  if (newTimes.length > 0 && (!selectedStartTime.value || !newTimes.includes(selectedStartTime.value))) {
+    selectedStartTime.value = newTimes[0]
+  }
+}, { immediate: true })
+
+const calculatedEndTime = computed(() => {
+  if (!selectedStartTime.value) return ''
+  const [h, m] = selectedStartTime.value.split(':').map(Number)
+  let endM = m + selectedDuration.value
+  let endH = h + Math.floor(endM / 60)
+  endM = endM % 60
+  if (endH >= 20) return '20:00'
+  return formatTime(endH, endM)
+})
+
+const isCappedAtClosing = computed(() => {
+  if (!selectedStartTime.value) return false
+  const [h, m] = selectedStartTime.value.split(':').map(Number)
+  return (h * 60 + m + selectedDuration.value) > 20 * 60
+})
 
 const fetchLabs = async () => {
   loadingLabs.value = true
@@ -301,9 +380,12 @@ const selectLab = async (lab) => {
 }
 
 const fetchSeats = async (labId) => {
+  if (!labId || !selectedStartTime.value) return
   loadingSeats.value = true
   try {
-    const res = await request.get(`/student/seat/list?labId=${labId}`)
+    const startStr = `${selectedDate.value} ${selectedStartTime.value}:00`
+    const endStr = `${selectedDate.value} ${calculatedEndTime.value}:00`
+    const res = await request.get(`/student/seat/list?labId=${labId}&startTime=${startStr}&endTime=${endStr}`)
     if (res.code === 200) {
       seats.value = res.data.seats || []
       labCols.value = res.data.cols || 5
@@ -315,6 +397,13 @@ const fetchSeats = async (labId) => {
     loadingSeats.value = false
   }
 }
+
+watch([selectedDate, selectedStartTime, selectedDuration], () => {
+  if (selectedLab.value) {
+    fetchSeats(selectedLab.value.id)
+    selectedSeats.value = []
+  }
+})
 
 const getSeatStatusClass = (seat) => {
   if (seat.status === 'FREE') return 'free'
@@ -368,13 +457,16 @@ const bookingLoading = ref(false)
 const modalUser = ref(null)
 
 const openBookingModal = () => {
-  const startObj = new Date(bookStartTime.value)
-  const endObj = new Date(bookEndTime.value)
+  const startStr = `${selectedDate.value} ${selectedStartTime.value}:00`
+  const endStr = `${selectedDate.value} ${calculatedEndTime.value}:00`
+  const startObj = new Date(startStr.replace(/-/g, '/'))
+  const endObj = new Date(endStr.replace(/-/g, '/'))
+  
   if (startObj >= endObj) {
     alert('结束时间必须在开始时间之后')
     return
   }
-  if (endObj.getTime() - startObj.getTime() > 2 * 3600 * 1000) {
+  if (selectedDuration.value > 120) {
     alert('单次预约时长最多不能超过2小时')
     return
   }
@@ -382,6 +474,9 @@ const openBookingModal = () => {
     alert('不能预约过去的时间')
     return
   }
+  
+  bookStartTime.value = startStr
+  bookEndTime.value = endStr
   modalUser.value = JSON.parse(localStorage.getItem('user'))
   showBookingModal.value = true
 }
@@ -389,15 +484,14 @@ const openBookingModal = () => {
 const confirmBooking = async () => {
   bookingLoading.value = true
   try {
-    const formatForBackend = (dtStr) => {
-      return dtStr.replace('T', ' ') + ':00'
-    }
+    const startStr = `${selectedDate.value} ${selectedStartTime.value}:00`
+    const endStr = `${selectedDate.value} ${calculatedEndTime.value}:00`
 
     const bookRecords = selectedSeats.value.map(seatId => ({
       labId: selectedLab.value.id,
       seatId: seatId,
-      bookStartTime: formatForBackend(bookStartTime.value),
-      bookEndTime: formatForBackend(bookEndTime.value)
+      bookStartTime: startStr,
+      bookEndTime: endStr
     }))
     
     const res = await request.post('/student/book/create', bookRecords)
@@ -595,6 +689,67 @@ setInterval(() => {
   align-items: center;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--glass-border);
+}
+
+/* Optimized Time Selection Styles */
+.booking-settings-v2 {
+  transition: all 0.3s ease;
+}
+
+.glass-input-new, .glass-select-new {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  border-radius: 12px;
+  padding: 10px 15px;
+  font-weight: 700;
+  color: #4f46e5;
+  transition: all 0.2s;
+  outline: none;
+  width: 100%;
+}
+
+.glass-input-new:focus, .glass-select-new:focus {
+  background: white;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  border-color: #4f46e5;
+}
+
+.duration-chip {
+  flex: 1;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  font-size: 11px;
+  font-weight: 800;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.duration-chip:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.duration-chip.active {
+  background: #4f46e5;
+  color: white;
+  border-color: #4f46e5;
+  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);
+}
+
+.status-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(79, 70, 229, 0.1);
+}
+
+.status-icon.warning {
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .time-input {

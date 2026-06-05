@@ -5,7 +5,7 @@
         <form @submit.prevent="handleLogin" class="login-form">
           <div class="form-group">
             <label>工号</label>
-            <input v-model="form.account" type="text" class="glass-input" placeholder="请输入工号" required pattern="\d{6,12}" />
+            <input v-model="form.account" type="text" class="glass-input" placeholder="请输入工号" required pattern="\d+" />
           </div>
           <div class="form-group mt-4">
             <label>密码</label>

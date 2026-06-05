@@ -89,6 +89,18 @@ public class AdminBookController {
             seatMapper.updateById(seatUpd);
         }
 
+        // Send notification to student
+        try {
+            com.library.reservation.entity.Notification notice = new com.library.reservation.entity.Notification();
+            notice.setUserId(existing.getUserId());
+            notice.setTitle("⚠️ 预约取消通知");
+            notice.setContent("您的预约 (ID: " + id + ") 已由管理员取消。原因：" + reason);
+            notice.setType("WARNING");
+            userServiceClient.sendNotification(notice);
+        } catch (Exception e) {
+            System.err.println("Failed to send cancellation notification: " + e.getMessage());
+        }
+
         return Result.success();
     }
 

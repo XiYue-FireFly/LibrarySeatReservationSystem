@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { IdCard, Lock, FlaskConical, Camera, Edit, User, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { loginStudent, registerStudent } from '../api/auth';
+import { loginStudent, loginAdmin, registerStudent } from '../api/auth';
 import { useAuth } from '../store/auth';
 
 export const Auth: React.FC = () => {
   const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [loginType, setLoginType] = useState<'STUDENT' | 'ADMIN'>('STUDENT');
   const navigate = useNavigate();
   const { login, isLoggedIn } = useAuth();
 
@@ -26,8 +27,11 @@ export const Auth: React.FC = () => {
     setLoginError('');
     setLoginLoading(true);
     try {
-      const data = await loginStudent(loginAccount, loginPassword);
+      const data = loginType === 'STUDENT' 
+        ? await loginStudent(loginAccount, loginPassword)
+        : await loginAdmin(loginAccount, loginPassword);
       login(data.token, data.userInfo);
+      // If admin, they might want to go straight to labs but with the portal visible
       navigate('/labs');
     } catch (err: unknown) {
       setLoginError(err instanceof Error ? err.message : '登录失败，请重试');
@@ -111,12 +115,36 @@ export const Auth: React.FC = () => {
         <section className="flex-1 p-8 lg:p-12 flex flex-col justify-center bg-surface">
           {/* Mobile Header */}
           <div className="lg:hidden mb-8 text-center">
-            <h2 className="font-headline font-bold text-2xl text-primary tracking-tight">实验室预约系统</h2>
-            <p className="text-on-surface-variant text-sm mt-1">请登录或注册以继续</p>
+            <h2 className={`font-headline font-bold text-2xl tracking-tight transition-colors ${loginType === 'ADMIN' ? 'text-indigo-600' : 'text-primary'}`}>
+              {loginType === 'ADMIN' ? '管理员入口' : '实验室预约系统'}
+            </h2>
+            <p className="text-on-surface-variant text-sm mt-1">
+              {loginType === 'ADMIN' ? '请使用管理员工号登录' : '请登录或注册以继续'}
+            </p>
           </div>
 
-          {/* Tab Switcher */}
-          <div className="flex bg-surface-container-low p-1 rounded-2xl mb-10 w-full max-w-[280px] mx-auto lg:mx-0">
+          {/* User Type Switcher */}
+          <div className="flex bg-surface-container-low p-1 rounded-2xl mb-6 w-full max-w-[320px] mx-auto lg:mx-0">
+            <button 
+              onClick={() => { setLoginType('STUDENT'); setTab('login'); }}
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                loginType === 'STUDENT' ? 'bg-primary text-white shadow-md' : 'text-on-surface-variant'
+              }`}
+            >
+              学生入口
+            </button>
+            <button 
+              onClick={() => { setLoginType('ADMIN'); setTab('login'); }}
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                loginType === 'ADMIN' ? 'bg-indigo-600 text-white shadow-md' : 'text-on-surface-variant'
+              }`}
+            >
+              管理员
+            </button>
+          </div>
+
+          {/* Tab Switcher (Only show if Student) */}
+          <div className={`flex bg-surface-container-low p-1 rounded-2xl mb-10 w-full max-w-[280px] mx-auto lg:mx-0 transition-opacity ${loginType === 'ADMIN' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <button 
               onClick={() => setTab('login')}
               className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300 ${
@@ -146,12 +174,14 @@ export const Auth: React.FC = () => {
                 className="space-y-6"
               >
                 <div className="space-y-2">
-                  <label className="block text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-widest px-1">学号</label>
+                  <label className="block text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-widest px-1">
+                    {loginType === 'ADMIN' ? '管理员账号 / 工号' : '学号'}
+                  </label>
                   <div className="relative group">
-                    <IdCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline group-focus-within:text-primary transition-colors" />
+                    <IdCard className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors ${loginType === 'ADMIN' ? 'group-focus-within:text-indigo-500' : 'group-focus-within:text-primary'}`} />
                     <input 
-                      className="w-full pl-12 pr-4 py-4 bg-surface-container-low border-none rounded-2xl text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary/20 input-shadow transition-all outline-none" 
-                      placeholder="请输入您的学号" 
+                      className={`w-full pl-12 pr-4 py-4 bg-surface-container-low border-none rounded-2xl text-on-surface placeholder:text-outline input-shadow transition-all outline-none focus:ring-2 ${loginType === 'ADMIN' ? 'focus:ring-indigo-500/20' : 'focus:ring-primary/20'}`} 
+                      placeholder={loginType === 'ADMIN' ? "请输入管理员账号" : "请输入您的学号"} 
                       type="text"
                       value={loginAccount}
                       onChange={e => setLoginAccount(e.target.value)}
@@ -182,11 +212,15 @@ export const Auth: React.FC = () => {
                 )}
 
                 <button 
-                  className="w-full py-4 bg-gradient-to-b from-primary to-primary-container text-on-primary font-bold rounded-2xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed" 
+                  className={`w-full py-4 text-on-primary font-bold rounded-2xl shadow-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-95 ${
+                    loginType === 'ADMIN' 
+                      ? 'bg-gradient-to-b from-indigo-600 to-indigo-800 shadow-indigo-200' 
+                      : 'bg-gradient-to-b from-primary to-primary-container shadow-primary/20'
+                  }`} 
                   type="submit"
                   disabled={loginLoading}
                 >
-                  {loginLoading ? '登录中...' : '立即登录'}
+                  {loginLoading ? '登录中...' : loginType === 'ADMIN' ? '管理员登录' : '立即登录'}
                 </button>
               </motion.form>
             ) : (
