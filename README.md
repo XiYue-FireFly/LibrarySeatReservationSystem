@@ -47,6 +47,3 @@
 1. 进入 `frontend` 目录。
 2. 执行 `npm install`。
 3. 执行 `npm run dev` 即可访问。
-
----
-*Created by Antigravity AI - 2026-03-13*
